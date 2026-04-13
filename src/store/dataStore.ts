@@ -1,32 +1,32 @@
 import { create } from 'zustand'
-import { persist, createJSONStorage } from 'zustand/middleware'
 import { v4 as uuid } from 'uuid'
 import type {
   Category, Subcategory, SubSubcategory,
-  Account,
+  Account, AccountBalance,
   BudgetPeriod, BudgetItem,
   Transaction, CategoryRef,
-  AppSettings, ID, AccountBalance,
+  AppSettings, ID,
   ShoppingList, ShoppingListItem,
 } from '../types'
-import { SCHEMA_VERSION } from '../lib/constants'
 import { periodName, todayISO } from '../lib/formatters'
-import { migrate } from './migrations'
 import { deleteImage } from '../lib/imageStore'
+import { supabase } from '../lib/supabase'
+import {
+  categoryFromDb, subcategoryFromDb, subSubFromDb, accountFromDb,
+  budgetPeriodFromDb, budgetItemFromDb, transactionFromDb,
+  shoppingListFromDb, shoppingListItemFromDb, settingsFromDb,
+  categoryRefToDb,
+} from '../lib/dbMappers'
 
 const DEFAULT_SETTINGS: AppSettings = {
-  currencySymbol: '$',
-  currencyCode: 'ARS',
-  currencyName: 'Peso Argentino',
-  altCurrencySymbol: 'U$S',
-  altCurrencyCode: 'USD',
-  altCurrencyName: 'Dólar',
-  conversionFactor: 1,
-  locale: 'es-AR',
-  warningThreshold: 0.80,
+  currencySymbol: '$', currencyCode: 'ARS', currencyName: 'Peso Argentino',
+  altCurrencySymbol: 'U$S', altCurrencyCode: 'USD', altCurrencyName: 'Dólar',
+  conversionFactor: 1, locale: 'es-AR', warningThreshold: 0.80,
 }
 
 interface DataState {
+  walletId: string | null
+  loading: boolean
   schemaVersion: number
   categories: Category[]
   subcategories: Subcategory[]
@@ -36,346 +36,539 @@ interface DataState {
   budgetItems: BudgetItem[]
   transactions: Transaction[]
   settings: AppSettings
-
-  // Categorías
-  addCategory: (data: Pick<Category, 'name' | 'icon' | 'color'>) => Category
-  updateCategory: (id: ID, data: Partial<Pick<Category, 'name' | 'icon' | 'color' | 'order'>>) => void
-  deleteCategory: (id: ID) => void
-
-  // Subcategorías
-  addSubcategory: (categoryId: ID, name: string) => Subcategory
-  updateSubcategory: (id: ID, data: Partial<Pick<Subcategory, 'name' | 'order'>>) => void
-  deleteSubcategory: (id: ID) => void
-
-  // Sub-subcategorías
-  addSubSubcategory: (subcategoryId: ID, name: string) => SubSubcategory
-  updateSubSubcategory: (id: ID, data: Partial<Pick<SubSubcategory, 'name' | 'order'>>) => void
-  deleteSubSubcategory: (id: ID) => void
-
-  // Cuentas
-  addAccount: (data: Pick<Account, 'name' | 'icon' | 'color' | 'type' | 'initialBalance' | 'initialBalanceAlt'>) => Account
-  updateAccount: (id: ID, data: Partial<Omit<Account, 'id' | 'createdAt'>>) => void
-  deleteAccount: (id: ID) => void
-  getAccountBalance: (accountId: ID) => AccountBalance | undefined
-
-  // Períodos de presupuesto
-  addBudgetPeriod: (month: number, year: number) => BudgetPeriod
-  setActivePeriod: (id: ID) => void
-  getActivePeriod: () => BudgetPeriod | undefined
-  ensureCurrentPeriod: () => BudgetPeriod
-
-  // Ítems de presupuesto
-  upsertBudgetItem: (periodId: ID, categoryRef: CategoryRef, amount: number, notes?: string) => void
-  deleteBudgetItem: (id: ID) => void
-
-  // Transacciones
-  addTransaction: (data: Omit<Transaction, 'id' | 'createdAt' | 'updatedAt'>) => Transaction
-  updateTransaction: (id: ID, data: Partial<Omit<Transaction, 'id' | 'createdAt' | 'updatedAt'>>) => void
-  deleteTransaction: (id: ID) => void
-
-  // Lista de compras
   shoppingLists: ShoppingList[]
   shoppingListItems: ShoppingListItem[]
-  addShoppingList: (name: string) => ShoppingList
-  updateShoppingList: (id: ID, name: string) => void
-  deleteShoppingList: (id: ID) => void
-  addShoppingListItem: (data: Omit<ShoppingListItem, 'id' | 'checked' | 'transactionId' | 'createdAt'>) => ShoppingListItem
-  updateShoppingListItem: (id: ID, data: Partial<Omit<ShoppingListItem, 'id' | 'listId' | 'createdAt'>>) => void
-  deleteShoppingListItem: (id: ID) => void
-  checkShoppingListItem: (id: ID, amount: number, amountAlt: number, accountId: ID) => void
-  uncheckShoppingListItem: (id: ID) => void
+
+  // Lifecycle
+  loadWalletData: (walletId: string) => Promise<void>
+  clearWalletData: () => void
+
+  // Categorías
+  addCategory:       (data: Pick<Category, 'name' | 'icon' | 'color'>) => Promise<Category>
+  updateCategory:    (id: ID, data: Partial<Pick<Category, 'name' | 'icon' | 'color' | 'order'>>) => Promise<void>
+  deleteCategory:    (id: ID) => Promise<void>
+
+  // Subcategorías
+  addSubcategory:    (categoryId: ID, name: string) => Promise<Subcategory>
+  updateSubcategory: (id: ID, data: Partial<Pick<Subcategory, 'name' | 'order'>>) => Promise<void>
+  deleteSubcategory: (id: ID) => Promise<void>
+
+  // Sub-subcategorías
+  addSubSubcategory:    (subcategoryId: ID, name: string) => Promise<SubSubcategory>
+  updateSubSubcategory: (id: ID, data: Partial<Pick<SubSubcategory, 'name' | 'order'>>) => Promise<void>
+  deleteSubSubcategory: (id: ID) => Promise<void>
+
+  // Cuentas
+  addAccount:        (data: Pick<Account, 'name' | 'icon' | 'color' | 'type' | 'initialBalance' | 'initialBalanceAlt'>) => Promise<Account>
+  updateAccount:     (id: ID, data: Partial<Omit<Account, 'id' | 'createdAt'>>) => Promise<void>
+  deleteAccount:     (id: ID) => Promise<void>
+  getAccountBalance: (accountId: ID) => AccountBalance | undefined
+
+  // Períodos
+  addBudgetPeriod:   (month: number, year: number) => Promise<BudgetPeriod>
+  setActivePeriod:   (id: ID) => Promise<void>
+  getActivePeriod:   () => BudgetPeriod | undefined
+  ensureCurrentPeriod: () => Promise<BudgetPeriod>
+
+  // Ítems de presupuesto
+  upsertBudgetItem:  (periodId: ID, categoryRef: CategoryRef, amount: number, notes?: string) => Promise<void>
+  deleteBudgetItem:  (id: ID) => Promise<void>
+
+  // Transacciones
+  addTransaction:    (data: Omit<Transaction, 'id' | 'createdAt' | 'updatedAt'>) => Promise<Transaction>
+  updateTransaction: (id: ID, data: Partial<Omit<Transaction, 'id' | 'createdAt' | 'updatedAt'>>) => Promise<void>
+  deleteTransaction: (id: ID) => Promise<void>
+
+  // Lista de compras
+  addShoppingList:       (name: string) => Promise<ShoppingList>
+  updateShoppingList:    (id: ID, name: string) => Promise<void>
+  deleteShoppingList:    (id: ID) => Promise<void>
+  addShoppingListItem:   (data: Omit<ShoppingListItem, 'id' | 'checked' | 'transactionId' | 'createdAt'>) => Promise<ShoppingListItem>
+  updateShoppingListItem:(id: ID, data: Partial<Omit<ShoppingListItem, 'id' | 'listId' | 'createdAt'>>) => Promise<void>
+  deleteShoppingListItem:(id: ID) => Promise<void>
+  checkShoppingListItem: (id: ID, amount: number, amountAlt: number, accountId: ID) => Promise<void>
+  uncheckShoppingListItem:(id: ID) => Promise<void>
 
   // Settings
-  updateSettings: (data: Partial<AppSettings>) => void
+  updateSettings: (data: Partial<AppSettings>) => Promise<void>
 }
 
-export const useDataStore = create<DataState>()(
-  persist(
-    (set, get) => ({
-      schemaVersion: SCHEMA_VERSION,
-      categories: [],
-      subcategories: [],
-      subSubcategories: [],
-      accounts: [],
-      budgetPeriods: [],
-      budgetItems: [],
-      transactions: [],
-      settings: DEFAULT_SETTINGS,
-      shoppingLists: [],
-      shoppingListItems: [],
+function wid() { return useDataStore.getState().walletId! }
 
-      // ─── Categorías ─────────────────────────────────────────────────────────
-      addCategory: (data) => {
-        const cat: Category = {
-          id: uuid(), name: data.name, icon: data.icon, color: data.color,
-          order: get().categories.length, createdAt: new Date().toISOString(),
-        }
-        set(s => ({ categories: [...s.categories, cat] }))
-        return cat
-      },
-      updateCategory: (id, data) => {
-        set(s => ({ categories: s.categories.map(c => c.id === id ? { ...c, ...data } : c) }))
-      },
-      deleteCategory: (id) => {
-        const subIdSet = new Set(get().subcategories.filter(s => s.categoryId === id).map(s => s.id))
-        const subSubIdSet = new Set(get().subSubcategories.filter(ss => subIdSet.has(ss.subcategoryId)).map(ss => ss.id))
-        set(s => ({
-          categories: s.categories.filter(c => c.id !== id),
-          subcategories: s.subcategories.filter(sub => sub.categoryId !== id),
-          subSubcategories: s.subSubcategories.filter(ss => !subIdSet.has(ss.subcategoryId)),
-          budgetItems: s.budgetItems.filter(b =>
-            b.categoryRef.categoryId !== id &&
-            !subIdSet.has(b.categoryRef.subcategoryId ?? '') &&
-            !subSubIdSet.has(b.categoryRef.subSubcategoryId ?? '')
-          ),
-          transactions: s.transactions.map(t =>
-            t.categoryRef && (
-              t.categoryRef.categoryId === id ||
-              subIdSet.has(t.categoryRef.subcategoryId ?? '') ||
-              subSubIdSet.has(t.categoryRef.subSubcategoryId ?? '')
-            ) ? { ...t, categoryRef: undefined } : t
-          ),
-        }))
-      },
+export const useDataStore = create<DataState>()((set, get) => ({
+  walletId:        null,
+  loading:         false,
+  schemaVersion:   2,
+  categories:      [],
+  subcategories:   [],
+  subSubcategories:[],
+  accounts:        [],
+  budgetPeriods:   [],
+  budgetItems:     [],
+  transactions:    [],
+  settings:        DEFAULT_SETTINGS,
+  shoppingLists:   [],
+  shoppingListItems:[],
 
-      // ─── Subcategorías ───────────────────────────────────────────────────────
-      addSubcategory: (categoryId, name) => {
-        const sub: Subcategory = {
-          id: uuid(), categoryId, name,
-          order: get().subcategories.filter(s => s.categoryId === categoryId).length,
-          createdAt: new Date().toISOString(),
-        }
-        set(s => ({ subcategories: [...s.subcategories, sub] }))
-        return sub
-      },
-      updateSubcategory: (id, data) => {
-        set(s => ({ subcategories: s.subcategories.map(sub => sub.id === id ? { ...sub, ...data } : sub) }))
-      },
-      deleteSubcategory: (id) => {
-        const subSubIdSet = new Set(get().subSubcategories.filter(ss => ss.subcategoryId === id).map(ss => ss.id))
-        set(s => ({
-          subcategories: s.subcategories.filter(sub => sub.id !== id),
-          subSubcategories: s.subSubcategories.filter(ss => ss.subcategoryId !== id),
-          budgetItems: s.budgetItems.filter(b =>
-            b.categoryRef.subcategoryId !== id && !subSubIdSet.has(b.categoryRef.subSubcategoryId ?? '')
-          ),
-          transactions: s.transactions.map(t =>
-            t.categoryRef?.subcategoryId === id || subSubIdSet.has(t.categoryRef?.subSubcategoryId ?? '')
-              ? { ...t, categoryRef: undefined } : t
-          ),
-        }))
-      },
+  // ─── Lifecycle ─────────────────────────────────────────────────────────────
+  loadWalletData: async (walletId) => {
+    set({ walletId, loading: true })
+    const W = walletId
 
-      // ─── Sub-subcategorías ───────────────────────────────────────────────────
-      addSubSubcategory: (subcategoryId, name) => {
-        const ss: SubSubcategory = {
-          id: uuid(), subcategoryId, name,
-          order: get().subSubcategories.filter(ss => ss.subcategoryId === subcategoryId).length,
-          createdAt: new Date().toISOString(),
-        }
-        set(s => ({ subSubcategories: [...s.subSubcategories, ss] }))
-        return ss
-      },
-      updateSubSubcategory: (id, data) => {
-        set(s => ({ subSubcategories: s.subSubcategories.map(ss => ss.id === id ? { ...ss, ...data } : ss) }))
-      },
-      deleteSubSubcategory: (id) => {
-        set(s => ({
-          subSubcategories: s.subSubcategories.filter(ss => ss.id !== id),
-          budgetItems: s.budgetItems.filter(b => b.categoryRef.subSubcategoryId !== id),
-          transactions: s.transactions.map(t =>
-            t.categoryRef?.subSubcategoryId === id ? { ...t, categoryRef: undefined } : t
-          ),
-        }))
-      },
+    const [cats, subs, subsubs, accs, periods, items, txs, lists, listItems, settRow] = await Promise.all([
+      supabase.from('cdg_categories').select('*').eq('wallet_id', W).order('order'),
+      supabase.from('cdg_subcategories').select('*').eq('wallet_id', W).order('order'),
+      supabase.from('cdg_sub_subcategories').select('*').eq('wallet_id', W).order('order'),
+      supabase.from('cdg_accounts').select('*').eq('wallet_id', W).order('order'),
+      supabase.from('cdg_budget_periods').select('*').eq('wallet_id', W).order('created_at'),
+      supabase.from('cdg_budget_items').select('*').eq('wallet_id', W),
+      supabase.from('cdg_transactions').select('*').eq('wallet_id', W).order('date', { ascending: false }),
+      supabase.from('cdg_shopping_lists').select('*').eq('wallet_id', W).order('created_at'),
+      supabase.from('cdg_shopping_list_items').select('*').eq('wallet_id', W).order('created_at'),
+      supabase.from('cdg_wallet_settings').select('*').eq('wallet_id', W).single(),
+    ])
 
-      // ─── Cuentas ─────────────────────────────────────────────────────────────
-      addAccount: (data) => {
-        const account: Account = {
-          id: uuid(), ...data,
-          order: get().accounts.length,
-          createdAt: new Date().toISOString(),
-        }
-        set(s => ({ accounts: [...s.accounts, account] }))
-        return account
-      },
-      updateAccount: (id, data) => {
-        set(s => ({ accounts: s.accounts.map(a => a.id === id ? { ...a, ...data } : a) }))
-      },
-      deleteAccount: (id) => {
-        set(s => ({
-          accounts: s.accounts.filter(a => a.id !== id),
-          // Desvincula las transacciones (no las borra)
-          transactions: s.transactions.map(t => t.accountId === id ? { ...t, accountId: '' } : t),
-        }))
-      },
-      getAccountBalance: (accountId) => {
-        const account = get().accounts.find(a => a.id === accountId)
-        if (!account) return undefined
-        const txs = get().transactions.filter(t => t.accountId === accountId)
-        const balance = account.initialBalance + txs.reduce((sum, t) =>
-          t.type === 'income' ? sum + t.amount : sum - t.amount, 0
-        )
-        const balanceAlt = account.initialBalanceAlt + txs.reduce((sum, t) =>
-          t.type === 'income' ? sum + t.amountAlt : sum - t.amountAlt, 0
-        )
-        return { account, balance, balanceAlt }
-      },
+    set({
+      categories:       (cats.data      ?? []).map(categoryFromDb),
+      subcategories:    (subs.data      ?? []).map(subcategoryFromDb),
+      subSubcategories: (subsubs.data   ?? []).map(subSubFromDb),
+      accounts:         (accs.data      ?? []).map(accountFromDb),
+      budgetPeriods:    (periods.data   ?? []).map(budgetPeriodFromDb),
+      budgetItems:      (items.data     ?? []).map(budgetItemFromDb),
+      transactions:     (txs.data       ?? []).map(transactionFromDb),
+      shoppingLists:    (lists.data     ?? []).map(shoppingListFromDb),
+      shoppingListItems:(listItems.data ?? []).map(shoppingListItemFromDb),
+      settings:         settRow.data ? settingsFromDb(settRow.data) : DEFAULT_SETTINGS,
+      loading: false,
+    })
+  },
 
-      // ─── Períodos ────────────────────────────────────────────────────────────
-      addBudgetPeriod: (month, year) => {
-        const period: BudgetPeriod = {
-          id: uuid(), month, year, name: periodName(month, year),
-          isActive: true, createdAt: new Date().toISOString(),
-        }
-        set(s => ({ budgetPeriods: [...s.budgetPeriods.map(p => ({ ...p, isActive: false })), period] }))
-        return period
-      },
-      setActivePeriod: (id) => {
-        set(s => ({ budgetPeriods: s.budgetPeriods.map(p => ({ ...p, isActive: p.id === id })) }))
-      },
-      getActivePeriod: () => get().budgetPeriods.find(p => p.isActive),
-      ensureCurrentPeriod: () => {
-        const now = new Date()
-        const month = now.getMonth() + 1
-        const year = now.getFullYear()
-        const existing = get().budgetPeriods.find(p => p.month === month && p.year === year)
-        if (existing) {
-          if (!existing.isActive) get().setActivePeriod(existing.id)
-          return existing
-        }
-        return get().addBudgetPeriod(month, year)
-      },
+  clearWalletData: () => set({
+    walletId: null, loading: false,
+    categories: [], subcategories: [], subSubcategories: [], accounts: [],
+    budgetPeriods: [], budgetItems: [], transactions: [], settings: DEFAULT_SETTINGS,
+    shoppingLists: [], shoppingListItems: [],
+  }),
 
-      // ─── Presupuesto ─────────────────────────────────────────────────────────
-      upsertBudgetItem: (periodId, categoryRef, amount, notes) => {
-        const refKey = (r: CategoryRef) =>
-          `${r.categoryId}|${r.subcategoryId ?? ''}|${r.subSubcategoryId ?? ''}`
-        const key = refKey(categoryRef)
-        const existing = get().budgetItems.find(
-          b => b.budgetPeriodId === periodId && refKey(b.categoryRef) === key
-        )
-        if (existing) {
-          set(s => ({ budgetItems: s.budgetItems.map(b => b.id === existing.id ? { ...b, amount, notes } : b) }))
-        } else {
-          set(s => ({ budgetItems: [...s.budgetItems, { id: uuid(), budgetPeriodId: periodId, categoryRef, amount, notes }] }))
-        }
-      },
-      deleteBudgetItem: (id) => {
-        set(s => ({ budgetItems: s.budgetItems.filter(b => b.id !== id) }))
-      },
+  // ─── Categorías ─────────────────────────────────────────────────────────────
+  addCategory: async (data) => {
+    const id = uuid()
+    const order = get().categories.length
+    const { data: row, error } = await supabase
+      .from('cdg_categories')
+      .insert({ id, wallet_id: wid(), name: data.name, icon: data.icon, color: data.color, order })
+      .select().single()
+    if (error) throw error
+    const cat = categoryFromDb(row)
+    set(s => ({ categories: [...s.categories, cat] }))
+    return cat
+  },
 
-      // ─── Transacciones ───────────────────────────────────────────────────────
-      addTransaction: (data) => {
-        const now = new Date().toISOString()
-        const tx: Transaction = { id: uuid(), ...data, createdAt: now, updatedAt: now }
-        set(s => ({ transactions: [...s.transactions, tx] }))
-        return tx
-      },
-      updateTransaction: (id, data) => {
-        set(s => ({
-          transactions: s.transactions.map(t =>
-            t.id === id ? { ...t, ...data, updatedAt: new Date().toISOString() } : t
-          ),
-        }))
-      },
-      deleteTransaction: (id) => {
-        const tx = get().transactions.find(t => t.id === id)
-        if (tx?.imageId) deleteImage(tx.imageId)
-        set(s => ({ transactions: s.transactions.filter(t => t.id !== id) }))
-      },
+  updateCategory: async (id, data) => {
+    const { error } = await supabase.from('cdg_categories').update(data).eq('id', id)
+    if (error) throw error
+    set(s => ({ categories: s.categories.map(c => c.id === id ? { ...c, ...data } : c) }))
+  },
 
-      // ─── Lista de compras ────────────────────────────────────────────────────
-      addShoppingList: (name) => {
-        const list: ShoppingList = { id: uuid(), name, createdAt: new Date().toISOString() }
-        set(s => ({ shoppingLists: [...s.shoppingLists, list] }))
-        return list
-      },
-      updateShoppingList: (id, name) => {
-        set(s => ({ shoppingLists: s.shoppingLists.map(l => l.id === id ? { ...l, name } : l) }))
-      },
-      deleteShoppingList: (id) => {
-        // Cascade: eliminar ítems y sus transacciones asociadas
-        const items = get().shoppingListItems.filter(i => i.listId === id)
-        const txIds = new Set(items.map(i => i.transactionId).filter(Boolean) as string[])
-        get().transactions
-          .filter(t => txIds.has(t.id) && t.imageId)
-          .forEach(t => deleteImage(t.imageId!))
-        set(s => ({
-          shoppingLists: s.shoppingLists.filter(l => l.id !== id),
-          shoppingListItems: s.shoppingListItems.filter(i => i.listId !== id),
-          transactions: s.transactions.filter(t => !txIds.has(t.id)),
-        }))
-      },
-      addShoppingListItem: (data) => {
-        const item: ShoppingListItem = { id: uuid(), ...data, checked: false, createdAt: new Date().toISOString() }
-        set(s => ({ shoppingListItems: [...s.shoppingListItems, item] }))
-        return item
-      },
-      updateShoppingListItem: (id, data) => {
-        set(s => ({ shoppingListItems: s.shoppingListItems.map(i => i.id === id ? { ...i, ...data } : i) }))
-      },
-      deleteShoppingListItem: (id) => {
-        const item = get().shoppingListItems.find(i => i.id === id)
-        if (item?.transactionId) {
-          const tx = get().transactions.find(t => t.id === item.transactionId)
-          if (tx?.imageId) deleteImage(tx.imageId)
-        }
-        set(s => ({
-          shoppingListItems: s.shoppingListItems.filter(i => i.id !== id),
-          transactions: item?.transactionId
-            ? s.transactions.filter(t => t.id !== item.transactionId)
-            : s.transactions,
-        }))
-      },
-      checkShoppingListItem: (id, amount, amountAlt, accountId) => {
-        const item = get().shoppingListItems.find(i => i.id === id)
-        if (!item || item.checked) return
-        const activePeriod = get().budgetPeriods.find(p => p.isActive)
-        if (!activePeriod) return
-        const tx = get().addTransaction({
-          type: 'expense',
-          accountId,
-          budgetPeriodId: activePeriod.id,
-          categoryRef: item.categoryRef,
-          amount,
-          amountAlt,
-          date: todayISO(),
-          description: item.name,
-          notes: item.notes,
-        })
-        set(s => ({
-          shoppingListItems: s.shoppingListItems.map(i =>
-            i.id === id ? { ...i, checked: true, transactionId: tx.id, actualAmount: amount, actualAmountAlt: amountAlt } : i
-          ),
-        }))
-      },
-      uncheckShoppingListItem: (id) => {
-        const item = get().shoppingListItems.find(i => i.id === id)
-        if (!item?.checked) return
-        if (item.transactionId) {
-          const tx = get().transactions.find(t => t.id === item.transactionId)
-          if (tx?.imageId) deleteImage(tx.imageId)
-        }
-        set(s => ({
-          shoppingListItems: s.shoppingListItems.map(i =>
-            i.id === id ? { ...i, checked: false, transactionId: undefined, actualAmount: undefined, actualAmountAlt: undefined } : i
-          ),
-          transactions: item.transactionId
-            ? s.transactions.filter(t => t.id !== item.transactionId)
-            : s.transactions,
-        }))
-      },
+  deleteCategory: async (id) => {
+    // DB cascades: subcategories→sub_subcategories, budget_items; transactions SET NULL
+    const { error } = await supabase.from('cdg_categories').delete().eq('id', id)
+    if (error) throw error
+    const subIds = new Set(get().subcategories.filter(s => s.categoryId === id).map(s => s.id))
+    const subSubIds = new Set(get().subSubcategories.filter(ss => subIds.has(ss.subcategoryId)).map(ss => ss.id))
+    set(s => ({
+      categories:       s.categories.filter(c => c.id !== id),
+      subcategories:    s.subcategories.filter(sub => sub.categoryId !== id),
+      subSubcategories: s.subSubcategories.filter(ss => !subIds.has(ss.subcategoryId)),
+      budgetItems:      s.budgetItems.filter(b =>
+        b.categoryRef.categoryId !== id &&
+        !subIds.has(b.categoryRef.subcategoryId ?? '') &&
+        !subSubIds.has(b.categoryRef.subSubcategoryId ?? '')
+      ),
+      transactions: s.transactions.map(t =>
+        t.categoryRef && (
+          t.categoryRef.categoryId === id ||
+          subIds.has(t.categoryRef.subcategoryId ?? '') ||
+          subSubIds.has(t.categoryRef.subSubcategoryId ?? '')
+        ) ? { ...t, categoryRef: undefined } : t
+      ),
+    }))
+  },
 
-      updateSettings: (data) => {
-        set(s => ({ settings: { ...s.settings, ...data } }))
-      },
-    }),
-    {
-      name: 'control-gastos-v1',
-      storage: createJSONStorage(() => localStorage),
-      version: SCHEMA_VERSION,
-      migrate,
+  // ─── Subcategorías ──────────────────────────────────────────────────────────
+  addSubcategory: async (categoryId, name) => {
+    const id = uuid()
+    const order = get().subcategories.filter(s => s.categoryId === categoryId).length
+    const { data: row, error } = await supabase
+      .from('cdg_subcategories')
+      .insert({ id, wallet_id: wid(), category_id: categoryId, name, order })
+      .select().single()
+    if (error) throw error
+    const sub = subcategoryFromDb(row)
+    set(s => ({ subcategories: [...s.subcategories, sub] }))
+    return sub
+  },
+
+  updateSubcategory: async (id, data) => {
+    const { error } = await supabase.from('cdg_subcategories').update(data).eq('id', id)
+    if (error) throw error
+    set(s => ({ subcategories: s.subcategories.map(sub => sub.id === id ? { ...sub, ...data } : sub) }))
+  },
+
+  deleteSubcategory: async (id) => {
+    const { error } = await supabase.from('cdg_subcategories').delete().eq('id', id)
+    if (error) throw error
+    const subSubIds = new Set(get().subSubcategories.filter(ss => ss.subcategoryId === id).map(ss => ss.id))
+    set(s => ({
+      subcategories:    s.subcategories.filter(sub => sub.id !== id),
+      subSubcategories: s.subSubcategories.filter(ss => ss.subcategoryId !== id),
+      budgetItems:      s.budgetItems.filter(b =>
+        b.categoryRef.subcategoryId !== id && !subSubIds.has(b.categoryRef.subSubcategoryId ?? '')
+      ),
+      transactions: s.transactions.map(t =>
+        t.categoryRef?.subcategoryId === id || subSubIds.has(t.categoryRef?.subSubcategoryId ?? '')
+          ? { ...t, categoryRef: undefined } : t
+      ),
+    }))
+  },
+
+  // ─── Sub-subcategorías ───────────────────────────────────────────────────────
+  addSubSubcategory: async (subcategoryId, name) => {
+    const id = uuid()
+    const order = get().subSubcategories.filter(ss => ss.subcategoryId === subcategoryId).length
+    const { data: row, error } = await supabase
+      .from('cdg_sub_subcategories')
+      .insert({ id, wallet_id: wid(), subcategory_id: subcategoryId, name, order })
+      .select().single()
+    if (error) throw error
+    const ss = subSubFromDb(row)
+    set(s => ({ subSubcategories: [...s.subSubcategories, ss] }))
+    return ss
+  },
+
+  updateSubSubcategory: async (id, data) => {
+    const { error } = await supabase.from('cdg_sub_subcategories').update(data).eq('id', id)
+    if (error) throw error
+    set(s => ({ subSubcategories: s.subSubcategories.map(ss => ss.id === id ? { ...ss, ...data } : ss) }))
+  },
+
+  deleteSubSubcategory: async (id) => {
+    const { error } = await supabase.from('cdg_sub_subcategories').delete().eq('id', id)
+    if (error) throw error
+    set(s => ({
+      subSubcategories: s.subSubcategories.filter(ss => ss.id !== id),
+      budgetItems:  s.budgetItems.filter(b => b.categoryRef.subSubcategoryId !== id),
+      transactions: s.transactions.map(t =>
+        t.categoryRef?.subSubcategoryId === id ? { ...t, categoryRef: undefined } : t
+      ),
+    }))
+  },
+
+  // ─── Cuentas ─────────────────────────────────────────────────────────────────
+  addAccount: async (data) => {
+    const id = uuid()
+    const order = get().accounts.length
+    const { data: row, error } = await supabase
+      .from('cdg_accounts')
+      .insert({
+        id, wallet_id: wid(), name: data.name, icon: data.icon,
+        color: data.color, type: data.type, order,
+        initial_balance: data.initialBalance, initial_balance_alt: data.initialBalanceAlt,
+      })
+      .select().single()
+    if (error) throw error
+    const account = accountFromDb(row)
+    set(s => ({ accounts: [...s.accounts, account] }))
+    return account
+  },
+
+  updateAccount: async (id, data) => {
+    const dbData: Record<string, unknown> = {}
+    if (data.name !== undefined)               dbData.name = data.name
+    if (data.icon !== undefined)               dbData.icon = data.icon
+    if (data.color !== undefined)              dbData.color = data.color
+    if (data.type !== undefined)               dbData.type = data.type
+    if (data.order !== undefined)              dbData.order = data.order
+    if (data.initialBalance !== undefined)     dbData.initial_balance = data.initialBalance
+    if (data.initialBalanceAlt !== undefined)  dbData.initial_balance_alt = data.initialBalanceAlt
+    const { error } = await supabase.from('cdg_accounts').update(dbData).eq('id', id)
+    if (error) throw error
+    set(s => ({ accounts: s.accounts.map(a => a.id === id ? { ...a, ...data } : a) }))
+  },
+
+  deleteAccount: async (id) => {
+    const { error } = await supabase.from('cdg_accounts').delete().eq('id', id)
+    if (error) throw error
+    set(s => ({
+      accounts: s.accounts.filter(a => a.id !== id),
+      transactions: s.transactions.map(t => t.accountId === id ? { ...t, accountId: '' } : t),
+    }))
+  },
+
+  getAccountBalance: (accountId) => {
+    const account = get().accounts.find(a => a.id === accountId)
+    if (!account) return undefined
+    const txs = get().transactions.filter(t => t.accountId === accountId)
+    const balance    = account.initialBalance    + txs.reduce((sum, t) => t.type === 'income' ? sum + t.amount    : sum - t.amount,    0)
+    const balanceAlt = account.initialBalanceAlt + txs.reduce((sum, t) => t.type === 'income' ? sum + t.amountAlt : sum - t.amountAlt, 0)
+    return { account, balance, balanceAlt }
+  },
+
+  // ─── Períodos ────────────────────────────────────────────────────────────────
+  addBudgetPeriod: async (month, year) => {
+    const id = uuid()
+    const name = periodName(month, year)
+    // Desactivar todos los existentes en Supabase
+    await supabase.from('cdg_budget_periods').update({ is_active: false }).eq('wallet_id', wid())
+    const { data: row, error } = await supabase
+      .from('cdg_budget_periods')
+      .insert({ id, wallet_id: wid(), month, year, name, is_active: true })
+      .select().single()
+    if (error) throw error
+    const period = budgetPeriodFromDb(row)
+    set(s => ({ budgetPeriods: [...s.budgetPeriods.map(p => ({ ...p, isActive: false })), period] }))
+    return period
+  },
+
+  setActivePeriod: async (id) => {
+    await supabase.from('cdg_budget_periods').update({ is_active: false }).eq('wallet_id', wid())
+    await supabase.from('cdg_budget_periods').update({ is_active: true }).eq('id', id)
+    set(s => ({ budgetPeriods: s.budgetPeriods.map(p => ({ ...p, isActive: p.id === id })) }))
+  },
+
+  getActivePeriod: () => get().budgetPeriods.find(p => p.isActive),
+
+  ensureCurrentPeriod: async () => {
+    const now = new Date()
+    const month = now.getMonth() + 1
+    const year  = now.getFullYear()
+    const existing = get().budgetPeriods.find(p => p.month === month && p.year === year)
+    if (existing) {
+      if (!existing.isActive) await get().setActivePeriod(existing.id)
+      return existing
     }
-  )
-)
+    return get().addBudgetPeriod(month, year)
+  },
+
+  // ─── Presupuesto ─────────────────────────────────────────────────────────────
+  upsertBudgetItem: async (periodId, categoryRef, amount, notes) => {
+    const refKey = (r: CategoryRef) => `${r.categoryId}|${r.subcategoryId ?? ''}|${r.subSubcategoryId ?? ''}`
+    const key = refKey(categoryRef)
+    const existing = get().budgetItems.find(b => b.budgetPeriodId === periodId && refKey(b.categoryRef) === key)
+
+    if (existing) {
+      const { error } = await supabase.from('cdg_budget_items').update({ amount, notes }).eq('id', existing.id)
+      if (error) throw error
+      set(s => ({ budgetItems: s.budgetItems.map(b => b.id === existing.id ? { ...b, amount, notes } : b) }))
+    } else {
+      const id = uuid()
+      const { data: row, error } = await supabase
+        .from('cdg_budget_items')
+        .insert({ id, wallet_id: wid(), budget_period_id: periodId, amount, notes, ...categoryRefToDb(categoryRef) })
+        .select().single()
+      if (error) throw error
+      set(s => ({ budgetItems: [...s.budgetItems, budgetItemFromDb(row)] }))
+    }
+  },
+
+  deleteBudgetItem: async (id) => {
+    const { error } = await supabase.from('cdg_budget_items').delete().eq('id', id)
+    if (error) throw error
+    set(s => ({ budgetItems: s.budgetItems.filter(b => b.id !== id) }))
+  },
+
+  // ─── Transacciones ───────────────────────────────────────────────────────────
+  addTransaction: async (data) => {
+    const id = uuid()
+    const { data: row, error } = await supabase
+      .from('cdg_transactions')
+      .insert({
+        id, wallet_id: wid(), type: data.type,
+        account_id: data.accountId || null,
+        budget_period_id: data.budgetPeriodId,
+        amount: data.amount, amount_alt: data.amountAlt,
+        date: data.date, description: data.description, notes: data.notes ?? null,
+        image_path: data.imageId ?? null,
+        ...categoryRefToDb(data.categoryRef),
+      })
+      .select().single()
+    if (error) throw error
+    const tx = transactionFromDb(row)
+    set(s => ({ transactions: [tx, ...s.transactions] }))
+    return tx
+  },
+
+  updateTransaction: async (id, data) => {
+    const dbData: Record<string, unknown> = { updated_at: new Date().toISOString() }
+    if (data.type !== undefined)           dbData.type = data.type
+    if (data.accountId !== undefined)      dbData.account_id = data.accountId || null
+    if (data.budgetPeriodId !== undefined) dbData.budget_period_id = data.budgetPeriodId
+    if (data.amount !== undefined)         dbData.amount = data.amount
+    if (data.amountAlt !== undefined)      dbData.amount_alt = data.amountAlt
+    if (data.date !== undefined)           dbData.date = data.date
+    if (data.description !== undefined)    dbData.description = data.description
+    if (data.notes !== undefined)          dbData.notes = data.notes
+    if (data.imageId !== undefined)        dbData.image_path = data.imageId ?? null
+    if (data.categoryRef !== undefined)    Object.assign(dbData, categoryRefToDb(data.categoryRef))
+    const { error } = await supabase.from('cdg_transactions').update(dbData).eq('id', id)
+    if (error) throw error
+    set(s => ({
+      transactions: s.transactions.map(t =>
+        t.id === id ? { ...t, ...data, updatedAt: dbData.updated_at as string } : t
+      ),
+    }))
+  },
+
+  deleteTransaction: async (id) => {
+    const tx = get().transactions.find(t => t.id === id)
+    if (tx?.imageId) deleteImage(tx.imageId)
+    const { error } = await supabase.from('cdg_transactions').delete().eq('id', id)
+    if (error) throw error
+    set(s => ({
+      transactions: s.transactions.filter(t => t.id !== id),
+      // DB SET NULL on shopping_list_items.transaction_id — reflect locally
+      shoppingListItems: s.shoppingListItems.map(i =>
+        i.transactionId === id
+          ? { ...i, checked: false, transactionId: undefined, actualAmount: undefined, actualAmountAlt: undefined }
+          : i
+      ),
+    }))
+  },
+
+  // ─── Lista de compras ────────────────────────────────────────────────────────
+  addShoppingList: async (name) => {
+    const id = uuid()
+    const { data: row, error } = await supabase
+      .from('cdg_shopping_lists')
+      .insert({ id, wallet_id: wid(), name })
+      .select().single()
+    if (error) throw error
+    const list = shoppingListFromDb(row)
+    set(s => ({ shoppingLists: [...s.shoppingLists, list] }))
+    return list
+  },
+
+  updateShoppingList: async (id, name) => {
+    const { error } = await supabase.from('cdg_shopping_lists').update({ name }).eq('id', id)
+    if (error) throw error
+    set(s => ({ shoppingLists: s.shoppingLists.map(l => l.id === id ? { ...l, name } : l) }))
+  },
+
+  deleteShoppingList: async (id) => {
+    // Limpia imágenes de transacciones asociadas
+    const itemIds = new Set(get().shoppingListItems.filter(i => i.listId === id).map(i => i.transactionId).filter(Boolean) as string[])
+    get().transactions.filter(t => itemIds.has(t.id) && t.imageId).forEach(t => deleteImage(t.imageId!))
+    // DB CASCADE borra items; transactions quedan (solo se desvínculan via SET NULL en items)
+    const { error } = await supabase.from('cdg_shopping_lists').delete().eq('id', id)
+    if (error) throw error
+    set(s => ({
+      shoppingLists:     s.shoppingLists.filter(l => l.id !== id),
+      shoppingListItems: s.shoppingListItems.filter(i => i.listId !== id),
+    }))
+  },
+
+  addShoppingListItem: async (data) => {
+    const id = uuid()
+    const { data: row, error } = await supabase
+      .from('cdg_shopping_list_items')
+      .insert({
+        id, wallet_id: wid(), list_id: data.listId, name: data.name,
+        estimated_amount: data.estimatedAmount, estimated_amount_alt: data.estimatedAmountAlt,
+        notes: data.notes ?? null,
+        ...categoryRefToDb(data.categoryRef),
+      })
+      .select().single()
+    if (error) throw error
+    const item = shoppingListItemFromDb(row)
+    set(s => ({ shoppingListItems: [...s.shoppingListItems, item] }))
+    return item
+  },
+
+  updateShoppingListItem: async (id, data) => {
+    const dbData: Record<string, unknown> = {}
+    if (data.name !== undefined)                dbData.name = data.name
+    if (data.estimatedAmount !== undefined)     dbData.estimated_amount = data.estimatedAmount
+    if (data.estimatedAmountAlt !== undefined)  dbData.estimated_amount_alt = data.estimatedAmountAlt
+    if (data.notes !== undefined)               dbData.notes = data.notes
+    if (data.categoryRef !== undefined)         Object.assign(dbData, categoryRefToDb(data.categoryRef))
+    if (data.checked !== undefined)             dbData.checked = data.checked
+    if (data.transactionId !== undefined)       dbData.transaction_id = data.transactionId ?? null
+    if (data.actualAmount !== undefined)        dbData.actual_amount = data.actualAmount ?? null
+    if (data.actualAmountAlt !== undefined)     dbData.actual_amount_alt = data.actualAmountAlt ?? null
+    const { error } = await supabase.from('cdg_shopping_list_items').update(dbData).eq('id', id)
+    if (error) throw error
+    set(s => ({ shoppingListItems: s.shoppingListItems.map(i => i.id === id ? { ...i, ...data } : i) }))
+  },
+
+  deleteShoppingListItem: async (id) => {
+    const item = get().shoppingListItems.find(i => i.id === id)
+    if (item?.transactionId) {
+      const tx = get().transactions.find(t => t.id === item.transactionId)
+      if (tx?.imageId) deleteImage(tx.imageId)
+      await supabase.from('cdg_transactions').delete().eq('id', item.transactionId)
+    }
+    const { error } = await supabase.from('cdg_shopping_list_items').delete().eq('id', id)
+    if (error) throw error
+    set(s => ({
+      shoppingListItems: s.shoppingListItems.filter(i => i.id !== id),
+      transactions: item?.transactionId
+        ? s.transactions.filter(t => t.id !== item.transactionId)
+        : s.transactions,
+    }))
+  },
+
+  checkShoppingListItem: async (id, amount, amountAlt, accountId) => {
+    const item = get().shoppingListItems.find(i => i.id === id)
+    if (!item || item.checked) return
+    const activePeriod = get().budgetPeriods.find(p => p.isActive)
+    if (!activePeriod) return
+    const tx = await get().addTransaction({
+      type: 'expense', accountId, budgetPeriodId: activePeriod.id,
+      categoryRef: item.categoryRef, amount, amountAlt,
+      date: todayISO(), description: item.name, notes: item.notes,
+    })
+    await get().updateShoppingListItem(id, {
+      checked: true, transactionId: tx.id, actualAmount: amount, actualAmountAlt: amountAlt,
+    })
+  },
+
+  uncheckShoppingListItem: async (id) => {
+    const item = get().shoppingListItems.find(i => i.id === id)
+    if (!item?.checked) return
+    if (item.transactionId) {
+      const tx = get().transactions.find(t => t.id === item.transactionId)
+      if (tx?.imageId) deleteImage(tx.imageId)
+      await supabase.from('cdg_transactions').delete().eq('id', item.transactionId)
+    }
+    const { error } = await supabase
+      .from('cdg_shopping_list_items')
+      .update({ checked: false, transaction_id: null, actual_amount: null, actual_amount_alt: null })
+      .eq('id', id)
+    if (error) throw error
+    set(s => ({
+      shoppingListItems: s.shoppingListItems.map(i =>
+        i.id === id ? { ...i, checked: false, transactionId: undefined, actualAmount: undefined, actualAmountAlt: undefined } : i
+      ),
+      transactions: item.transactionId
+        ? s.transactions.filter(t => t.id !== item.transactionId)
+        : s.transactions,
+    }))
+  },
+
+  // ─── Settings ────────────────────────────────────────────────────────────────
+  updateSettings: async (data) => {
+    const dbData: Record<string, unknown> = {}
+    if (data.currencySymbol !== undefined)    dbData.currency_symbol = data.currencySymbol
+    if (data.currencyCode !== undefined)      dbData.currency_code = data.currencyCode
+    if (data.currencyName !== undefined)      dbData.currency_name = data.currencyName
+    if (data.altCurrencySymbol !== undefined) dbData.alt_currency_symbol = data.altCurrencySymbol
+    if (data.altCurrencyCode !== undefined)   dbData.alt_currency_code = data.altCurrencyCode
+    if (data.altCurrencyName !== undefined)   dbData.alt_currency_name = data.altCurrencyName
+    if (data.conversionFactor !== undefined)  dbData.conversion_factor = data.conversionFactor
+    if (data.locale !== undefined)            dbData.locale = data.locale
+    if (data.warningThreshold !== undefined)  dbData.warning_threshold = data.warningThreshold
+    const { error } = await supabase.from('cdg_wallet_settings').update(dbData).eq('wallet_id', wid())
+    if (error) throw error
+    set(s => ({ settings: { ...s.settings, ...data } }))
+  },
+}))

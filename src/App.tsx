@@ -53,13 +53,15 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
 
 // ─── App principal (envuelta en AuthGuard) ───────────────────────────────────
 function MainApp() {
-  const { ensureCurrentPeriod, categories } = useDataStore()
+  const { ensureCurrentPeriod, categories, loading } = useDataStore()
 
   useEffect(() => {
-    ensureCurrentPeriod()
-    if (categories.length === 0) seedData()
+    if (!loading) {
+      ensureCurrentPeriod()
+      if (categories.length === 0) seedData()
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [loading])
 
   return (
     <div className="relative min-h-svh pb-nav">

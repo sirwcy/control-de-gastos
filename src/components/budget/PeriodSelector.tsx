@@ -26,7 +26,7 @@ export function PeriodSelector() {
     if (currentIndex > 0) setSelectedPeriodId(sorted[currentIndex - 1].id)
   }
 
-  const createNext = () => {
+  const createNext = async () => {
     const now = new Date()
     const ref = current ?? { month: now.getMonth() + 1, year: now.getFullYear() }
     let month = ref.month + 1
@@ -36,7 +36,7 @@ export function PeriodSelector() {
     if (existing) {
       setSelectedPeriodId(existing.id)
     } else {
-      const p = addBudgetPeriod(month, year)
+      const p = await addBudgetPeriod(month, year)
       setSelectedPeriodId(p.id)
     }
     setOpen(false)

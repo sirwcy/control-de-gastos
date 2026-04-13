@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type { User, Session } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
+import { useDataStore } from './dataStore'
 
 interface AuthState {
   user:            User | null
@@ -28,9 +29,19 @@ export const useAuthStore = create<AuthState>()(
         const { data: { session } } = await supabase.auth.getSession()
         set({ session, user: session?.user ?? null, loading: false })
 
+        // Si ya había cartera guardada en storage, cargar sus datos
+        const savedWalletId = useDataStore.getState().walletId
+          ?? (JSON.parse(localStorage.getItem('cdg-auth') ?? '{}')?.state?.currentWalletId ?? null)
+        if (session && savedWalletId) {
+          useDataStore.getState().loadWalletData(savedWalletId)
+        }
+
         supabase.auth.onAuthStateChange((event, session) => {
           set({ session, user: session?.user ?? null })
-          if (event === 'SIGNED_OUT') set({ currentWalletId: null })
+          if (event === 'SIGNED_OUT') {
+            useDataStore.getState().clearWalletData()
+            set({ currentWalletId: null })
+          }
         })
       },
 
@@ -51,10 +62,14 @@ export const useAuthStore = create<AuthState>()(
 
       signOut: async () => {
         await supabase.auth.signOut()
+        useDataStore.getState().clearWalletData()
         set({ user: null, session: null, currentWalletId: null })
       },
 
-      setCurrentWallet: (walletId) => set({ currentWalletId: walletId }),
+      setCurrentWallet: (walletId) => {
+        set({ currentWalletId: walletId })
+        useDataStore.getState().loadWalletData(walletId)
+      },
     }),
     {
       name: 'cdg-auth',
