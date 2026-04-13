@@ -1,15 +1,26 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Plus } from 'lucide-react'
 import { PageHeader } from '../components/layout/PageHeader'
 import { CategoryList } from '../components/categories/CategoryList'
 import { CategoryFormSheet } from '../components/categories/CategoryFormSheet'
 import { CurrencySettingsForm } from '../components/config/CurrencySettingsForm'
+import { MembersTab } from '../components/config/MembersTab'
+import { useAuthStore } from '../store/authStore'
+import { supabase } from '../lib/supabase'
 
-type Tab = 'categorias' | 'monedas'
+type Tab = 'categorias' | 'monedas' | 'miembros'
 
 export function ConfigPage() {
-  const [tab, setTab] = useState<Tab>('categorias')
+  const { currentWalletId } = useAuthStore()
+  const [tab, setTab]         = useState<Tab>('categorias')
   const [formOpen, setFormOpen] = useState(false)
+  const [isAdmin, setIsAdmin]   = useState(false)
+
+  useEffect(() => {
+    if (!currentWalletId) return
+    supabase.rpc('cdg_wallet_role', { p_wallet_id: currentWalletId })
+      .then(({ data }) => setIsAdmin(data === 'admin'))
+  }, [currentWalletId])
 
   return (
     <div className="flex flex-col">
@@ -41,6 +52,14 @@ export function ConfigPage() {
         >
           Monedas
         </button>
+        {isAdmin && (
+          <button
+            onClick={() => setTab('miembros')}
+            className={`flex-1 py-2 rounded-xl text-sm font-semibold transition-colors ${tab === 'miembros' ? 'bg-brand-500 text-white' : 'bg-slate-100 text-slate-500'}`}
+          >
+            Miembros
+          </button>
+        )}
       </div>
 
       {tab === 'categorias' && (
@@ -55,6 +74,8 @@ export function ConfigPage() {
           <CurrencySettingsForm />
         </div>
       )}
+
+      {tab === 'miembros' && <MembersTab />}
     </div>
   )
 }

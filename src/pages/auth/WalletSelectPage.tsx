@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { User, Users, ChevronRight, Plus, LogOut, TrendingDown, X } from 'lucide-react'
+import { User, Users, ChevronRight, Plus, LogOut, TrendingDown, X, Mail } from 'lucide-react'
 import { useAuthStore } from '../../store/authStore'
 import { supabase } from '../../lib/supabase'
 
@@ -8,6 +8,14 @@ interface WalletEntry {
   name: string
   type: 'personal' | 'family'
   role: string
+}
+
+interface PendingInvite {
+  id:          string
+  wallet_id:   string
+  wallet_name: string
+  role:        string
+  token:       string
 }
 
 const ROLE_LABEL: Record<string, string> = {
@@ -19,26 +27,32 @@ const ROLE_LABEL: Record<string, string> = {
 export function WalletSelectPage() {
   const { user, setCurrentWallet, signOut } = useAuthStore()
 
-  const [wallets, setWallets]   = useState<WalletEntry[]>([])
-  const [fetching, setFetching] = useState(true)
-  const [showCreate, setShowCreate] = useState(false)
-  const [newName, setNewName]   = useState('')
-  const [newType, setNewType]   = useState<'personal' | 'family'>('personal')
-  const [creating, setCreating] = useState(false)
-  const [createError, setCreateError] = useState<string | null>(null)
+  const [wallets,      setWallets]      = useState<WalletEntry[]>([])
+  const [pendingInvites, setPendingInvites] = useState<PendingInvite[]>([])
+  const [fetching,     setFetching]     = useState(true)
+  const [showCreate,   setShowCreate]   = useState(false)
+  const [newName,      setNewName]      = useState('')
+  const [newType,      setNewType]      = useState<'personal' | 'family'>('personal')
+  const [creating,     setCreating]     = useState(false)
+  const [createError,  setCreateError]  = useState<string | null>(null)
+  const [accepting,    setAccepting]    = useState<string | null>(null)
 
-  useEffect(() => {
-    loadWallets()
-  }, [])
+  useEffect(() => { loadWallets() }, [])
 
   async function loadWallets() {
     setFetching(true)
-    const { data: memberships } = await supabase
-      .from('cdg_wallet_members')
-      .select('wallet_id, role')
 
-    if (memberships && memberships.length > 0) {
-      const ids = memberships.map(m => m.wallet_id)
+    const [membershipsRes, invitesRes] = await Promise.all([
+      supabase.from('cdg_wallet_members').select('wallet_id, role'),
+      supabase
+        .from('cdg_invitations')
+        .select('id, wallet_id, role, token, cdg_wallets(name)')
+        .is('accepted_at', null)
+        .gt('expires_at', new Date().toISOString()),
+    ])
+
+    if (membershipsRes.data && membershipsRes.data.length > 0) {
+      const ids = membershipsRes.data.map(m => m.wallet_id)
       const { data: walletData } = await supabase
         .from('cdg_wallets')
         .select('id, name, type')
@@ -49,11 +63,32 @@ export function WalletSelectPage() {
         (walletData ?? []).map(w => ({
           ...w,
           type: w.type as 'personal' | 'family',
-          role: memberships.find(m => m.wallet_id === w.id)?.role ?? 'reader',
+          role: membershipsRes.data!.find(m => m.wallet_id === w.id)?.role ?? 'reader',
         }))
       )
     }
+
+    setPendingInvites(
+      (invitesRes.data ?? []).map((inv: { id: string; wallet_id: string; role: string; token: string; cdg_wallets: { name: string }[] | null }) => ({
+        id:          inv.id,
+        wallet_id:   inv.wallet_id,
+        wallet_name: inv.cdg_wallets?.[0]?.name ?? '—',
+        role:        inv.role,
+        token:       inv.token,
+      }))
+    )
+
     setFetching(false)
+  }
+
+  async function handleAcceptInvite(token: string) {
+    setAccepting(token)
+    const { data, error } = await supabase.rpc('cdg_accept_invitation', { p_token: token })
+    setAccepting(null)
+    if (error || data?.error) return
+    // Recargar y entrar directamente a la cartera aceptada
+    await loadWallets()
+    if (data?.wallet_id) setCurrentWallet(data.wallet_id)
   }
 
   async function handleCreate(e: React.FormEvent) {
@@ -104,10 +139,39 @@ export function WalletSelectPage() {
         </div>
       ) : (
         <div className="flex-1 space-y-3">
-          {wallets.length === 0 && !showCreate && (
+          {wallets.length === 0 && pendingInvites.length === 0 && !showCreate && (
             <div className="text-center py-10">
               <p className="text-sm text-slate-500 mb-1">No tenés carteras aún.</p>
               <p className="text-xs text-slate-400">Creá una para empezar.</p>
+            </div>
+          )}
+
+          {/* Invitaciones pendientes */}
+          {pendingInvites.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide px-1">
+                Invitaciones pendientes
+              </p>
+              {pendingInvites.map(inv => (
+                <div key={inv.id} className="flex items-center gap-4 p-4 bg-amber-50 border border-amber-200 rounded-2xl">
+                  <div className="w-11 h-11 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0">
+                    <Mail size={18} className="text-amber-600" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold text-slate-800 truncate text-sm">{inv.wallet_name}</p>
+                    <p className="text-xs text-slate-500">
+                      {ROLE_LABEL[inv.role] ?? inv.role} · Invitación pendiente
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => handleAcceptInvite(inv.token)}
+                    disabled={accepting === inv.token}
+                    className="text-xs font-bold text-amber-700 bg-amber-200 px-3 py-1.5 rounded-xl disabled:opacity-50 flex-shrink-0"
+                  >
+                    {accepting === inv.token ? '...' : 'Aceptar'}
+                  </button>
+                </div>
+              ))}
             </div>
           )}
 
