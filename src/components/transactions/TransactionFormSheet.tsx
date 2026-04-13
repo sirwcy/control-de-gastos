@@ -1,12 +1,12 @@
 import { useState, useEffect } from 'react'
 import { TrendingUp, TrendingDown, Camera, X } from 'lucide-react'
-import { v4 as uuid } from 'uuid'
 import { saveImage, getImageUrl, deleteImage } from '../../lib/imageStore'
 import { BottomSheet } from '../ui/BottomSheet'
 import { CategoryPicker } from '../categories/CategoryPicker'
 import { DualAmountInput } from './DualAmountInput'
 import { useDataStore } from '../../store/dataStore'
 import { useUIStore } from '../../store/uiStore'
+import { useAuthStore } from '../../store/authStore'
 import type { CategoryRef, TransactionType } from '../../types'
 import { getFullPath } from '../../lib/categoryHelpers'
 import { todayISO, parseAmount } from '../../lib/formatters'
@@ -19,6 +19,7 @@ export function TransactionFormSheet() {
     accounts, categories, subcategories, subSubcategories, budgetPeriods,
   } = useDataStore()
   const { transactionSheetOpen, editTransactionId, defaultTransactionType, closeTransactionSheet } = useUIStore()
+  const { currentWalletId } = useAuthStore()
 
   const editing = editTransactionId ? transactions.find(t => t.id === editTransactionId) : null
 
@@ -80,18 +81,7 @@ export function TransactionFormSheet() {
     const activePeriod = budgetPeriods.find(p => p.isActive)
     if (!activePeriod) return
 
-    // Manejar imagen
-    let finalImageId = editing?.imageId
-    if (imageFile) {
-      if (finalImageId) deleteImage(finalImageId)
-      finalImageId = uuid()
-      await saveImage(finalImageId, imageFile)
-    } else if (removedExistingImage && finalImageId) {
-      deleteImage(finalImageId)
-      finalImageId = undefined
-    }
-
-    const data = {
+    const baseData = {
       type: txType,
       accountId,
       budgetPeriodId: activePeriod.id,
@@ -100,13 +90,27 @@ export function TransactionFormSheet() {
       amountAlt,
       description: description.trim() || (txType === 'income' ? 'Ingreso' : 'Gasto'),
       date,
-      imageId: finalImageId,
     }
 
     if (editing) {
-      updateTransaction(editing.id, data)
+      let imagePath: string | undefined = editing.imageId
+      if (imageFile) {
+        // Sube al path canónico del TX (upsert sobreescribe si ya existía)
+        imagePath = `${currentWalletId}/${editing.id}`
+        await saveImage(imagePath, imageFile)
+      } else if (removedExistingImage && imagePath) {
+        deleteImage(imagePath)
+        imagePath = undefined
+      }
+      await updateTransaction(editing.id, { ...baseData, imageId: imagePath })
     } else {
-      addTransaction(data)
+      // Crear TX primero para obtener el ID, luego subir imagen
+      const tx = await addTransaction(baseData)
+      if (imageFile) {
+        const imagePath = `${currentWalletId}/${tx.id}`
+        await saveImage(imagePath, imageFile)
+        await updateTransaction(tx.id, { imageId: imagePath })
+      }
     }
     closeTransactionSheet()
   }
