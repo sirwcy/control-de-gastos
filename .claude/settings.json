@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c/ClaudeCode/Proyectos//**)",
+      "Read(//c/ClaudeCode//**)"
+    ]
+  }
+}
