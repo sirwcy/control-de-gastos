@@ -19,7 +19,7 @@ Para redeploy a Netlify: `npm run build` → MCP `netlify-deploy-services-update
 | Servicio | URL / ID |
 |---------|----------|
 | GitHub | https://github.com/sirwcy/control-de-gastos |
-| Netlify | https://cdg-control-gastos.netlify.app (ID: `a6b60e8d-abea-4ab9-9c21-d70e8f23bf3c`) |
+| Netlify | https://sicdg.netlify.app (ID: `a6b60e8d-abea-4ab9-9c21-d70e8f23bf3c`) |
 | Supabase | proyecto `labodega` (`btiyedvlrrioyctopflp`), prefijo `cdg_` |
 | Storage | bucket `cdg-receipts` (comprobantes, máx 10 MB) |
 

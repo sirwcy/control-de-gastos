@@ -9,21 +9,23 @@ interface Props {
   open: boolean
   onClose: () => void
   editing?: Category
+  onCreated?: (category: Category) => void
 }
 
-export function CategoryFormSheet({ open, onClose, editing }: Props) {
+export function CategoryFormSheet({ open, onClose, editing, onCreated }: Props) {
   const { addCategory, updateCategory } = useDataStore()
   const [name, setName]   = useState(editing?.name ?? '')
   const [color, setColor] = useState(editing?.color ?? CATEGORY_COLORS[0])
   const [icon, setIcon]   = useState(editing?.icon ?? CATEGORY_ICONS[0])
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const trimmed = name.trim()
     if (!trimmed) return
     if (editing) {
-      updateCategory(editing.id, { name: trimmed, color, icon })
+      await updateCategory(editing.id, { name: trimmed, color, icon })
     } else {
-      addCategory({ name: trimmed, color, icon })
+      const created = await addCategory({ name: trimmed, color, icon })
+      onCreated?.(created)
     }
     onClose()
   }
