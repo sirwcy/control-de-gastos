@@ -240,11 +240,13 @@ export function CategoryPicker({ value, onChange }: Props) {
         Nueva categoría
       </button>
 
-      <CategoryFormSheet
-        open={showCategoryForm}
-        onClose={() => setShowCategoryForm(false)}
-        onCreated={handleCategoryCreated}
-      />
+      {showCategoryForm && (
+        <CategoryFormSheet
+          open={showCategoryForm}
+          onClose={() => setShowCategoryForm(false)}
+          onCreated={handleCategoryCreated}
+        />
+      )}
     </div>
   )
 }
