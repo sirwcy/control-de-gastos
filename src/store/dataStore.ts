@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import { v4 as uuid } from 'uuid'
 import type {
   Category, Subcategory, SubSubcategory,
-  Account, AccountBalance,
+  Account, AccountBalance, Currency, CurrencyRate,
   BudgetPeriod, BudgetItem,
   Transaction, CategoryRef,
   AppSettings, ID,
@@ -12,7 +12,7 @@ import { periodName, todayISO } from '../lib/formatters'
 import { deleteImage } from '../lib/imageStore'
 import { supabase } from '../lib/supabase'
 import {
-  categoryFromDb, subcategoryFromDb, subSubFromDb, accountFromDb,
+  categoryFromDb, subcategoryFromDb, subSubFromDb, accountFromDb, currencyFromDb, currencyRateFromDb,
   budgetPeriodFromDb, budgetItemFromDb, transactionFromDb,
   shoppingListFromDb, shoppingListItemFromDb, settingsFromDb,
   categoryRefToDb,
@@ -20,8 +20,7 @@ import {
 
 const DEFAULT_SETTINGS: AppSettings = {
   currencySymbol: '$', currencyCode: 'ARS', currencyName: 'Peso Argentino',
-  altCurrencySymbol: 'U$S', altCurrencyCode: 'USD', altCurrencyName: 'Dólar',
-  conversionFactor: 1, locale: 'es-AR', warningThreshold: 0.80,
+  locale: 'es-AR', warningThreshold: 0.80,
 }
 
 interface DataState {
@@ -32,6 +31,8 @@ interface DataState {
   subcategories: Subcategory[]
   subSubcategories: SubSubcategory[]
   accounts: Account[]
+  currencies: Currency[]
+  currencyRates: CurrencyRate[]
   budgetPeriods: BudgetPeriod[]
   budgetItems: BudgetItem[]
   transactions: Transaction[]
@@ -59,10 +60,18 @@ interface DataState {
   deleteSubSubcategory: (id: ID) => Promise<void>
 
   // Cuentas
-  addAccount:        (data: Pick<Account, 'name' | 'icon' | 'color' | 'type' | 'initialBalance' | 'initialBalanceAlt'>) => Promise<Account>
+  addAccount:        (data: Pick<Account, 'name' | 'icon' | 'color' | 'type' | 'initialBalance' | 'initialBalanceAlt' | 'currencyId' | 'displayCurrencyIds' | 'showPrimary'>) => Promise<Account>
   updateAccount:     (id: ID, data: Partial<Omit<Account, 'id' | 'createdAt'>>) => Promise<void>
   deleteAccount:     (id: ID) => Promise<void>
   getAccountBalance: (accountId: ID) => AccountBalance | undefined
+
+  // Monedas (catálogo de secundarias)
+  addCurrency:       (data: Pick<Currency, 'code' | 'symbol' | 'name' | 'factor'> & Partial<Pick<Currency, 'sourceUrl'>>) => Promise<Currency>
+  updateCurrency:    (id: ID, data: Partial<Pick<Currency, 'code' | 'symbol' | 'name' | 'factor' | 'sourceUrl' | 'order'>>) => Promise<void>
+  deleteCurrency:    (id: ID) => Promise<{ error: string | null }>
+  getCurrency:       (id: ID | undefined) => Currency | undefined
+  getRatesForCurrency: (id: ID) => CurrencyRate[]
+  refreshBcvRates:   () => Promise<{ error: string | null; rate?: number }>
 
   // Períodos
   addBudgetPeriod:   (month: number, year: number) => Promise<BudgetPeriod>
@@ -103,6 +112,8 @@ export const useDataStore = create<DataState>()((set, get) => ({
   subcategories:   [],
   subSubcategories:[],
   accounts:        [],
+  currencies:      [],
+  currencyRates:   [],
   budgetPeriods:   [],
   budgetItems:     [],
   transactions:    [],
@@ -115,11 +126,13 @@ export const useDataStore = create<DataState>()((set, get) => ({
     set({ walletId, loading: true })
     const W = walletId
 
-    const [cats, subs, subsubs, accs, periods, items, txs, lists, listItems, settRow] = await Promise.all([
+    const [cats, subs, subsubs, accs, currs, rates, periods, items, txs, lists, listItems, settRow] = await Promise.all([
       supabase.from('cdg_categories').select('*').eq('wallet_id', W).order('order'),
       supabase.from('cdg_subcategories').select('*').eq('wallet_id', W).order('order'),
       supabase.from('cdg_sub_subcategories').select('*').eq('wallet_id', W).order('order'),
       supabase.from('cdg_accounts').select('*').eq('wallet_id', W).order('order'),
+      supabase.from('cdg_currencies').select('*').eq('wallet_id', W).order('order'),
+      supabase.from('cdg_currency_rates').select('*').eq('wallet_id', W).order('rate_date', { ascending: false }),
       supabase.from('cdg_budget_periods').select('*').eq('wallet_id', W).order('created_at'),
       supabase.from('cdg_budget_items').select('*').eq('wallet_id', W),
       supabase.from('cdg_transactions').select('*').eq('wallet_id', W).order('date', { ascending: false }),
@@ -133,6 +146,8 @@ export const useDataStore = create<DataState>()((set, get) => ({
       subcategories:    (subs.data      ?? []).map(subcategoryFromDb),
       subSubcategories: (subsubs.data   ?? []).map(subSubFromDb),
       accounts:         (accs.data      ?? []).map(accountFromDb),
+      currencies:       (currs.data     ?? []).map(currencyFromDb),
+      currencyRates:    (rates.data     ?? []).map(currencyRateFromDb),
       budgetPeriods:    (periods.data   ?? []).map(budgetPeriodFromDb),
       budgetItems:      (items.data     ?? []).map(budgetItemFromDb),
       transactions:     (txs.data       ?? []).map(transactionFromDb),
@@ -145,7 +160,7 @@ export const useDataStore = create<DataState>()((set, get) => ({
 
   clearWalletData: () => set({
     walletId: null, loading: false,
-    categories: [], subcategories: [], subSubcategories: [], accounts: [],
+    categories: [], subcategories: [], subSubcategories: [], accounts: [], currencies: [], currencyRates: [],
     budgetPeriods: [], budgetItems: [], transactions: [], settings: DEFAULT_SETTINGS,
     shoppingLists: [], shoppingListItems: [],
   }),
@@ -274,6 +289,9 @@ export const useDataStore = create<DataState>()((set, get) => ({
         id, wallet_id: wid(), name: data.name, icon: data.icon,
         color: data.color, type: data.type, order,
         initial_balance: data.initialBalance, initial_balance_alt: data.initialBalanceAlt,
+        currency_id: data.currencyId ?? null,
+        display_currency_ids: data.displayCurrencyIds ?? [],
+        show_primary: data.showPrimary ?? false,
       })
       .select().single()
     if (error) throw error
@@ -291,6 +309,9 @@ export const useDataStore = create<DataState>()((set, get) => ({
     if (data.order !== undefined)              dbData.order = data.order
     if (data.initialBalance !== undefined)     dbData.initial_balance = data.initialBalance
     if (data.initialBalanceAlt !== undefined)  dbData.initial_balance_alt = data.initialBalanceAlt
+    if (data.currencyId !== undefined)         dbData.currency_id = data.currencyId ?? null
+    if (data.displayCurrencyIds !== undefined) dbData.display_currency_ids = data.displayCurrencyIds
+    if (data.showPrimary !== undefined)        dbData.show_primary = data.showPrimary
     const { error } = await supabase.from('cdg_accounts').update(dbData).eq('id', id)
     if (error) throw error
     set(s => ({ accounts: s.accounts.map(a => a.id === id ? { ...a, ...data } : a) }))
@@ -312,6 +333,71 @@ export const useDataStore = create<DataState>()((set, get) => ({
     const balance    = account.initialBalance    + txs.reduce((sum, t) => t.type === 'income' ? sum + t.amount    : sum - t.amount,    0)
     const balanceAlt = account.initialBalanceAlt + txs.reduce((sum, t) => t.type === 'income' ? sum + t.amountAlt : sum - t.amountAlt, 0)
     return { account, balance, balanceAlt }
+  },
+
+  // ─── Monedas ─────────────────────────────────────────────────────────────────
+  addCurrency: async (data) => {
+    const id = uuid()
+    const order = get().currencies.length
+    const { data: row, error } = await supabase
+      .from('cdg_currencies')
+      .insert({
+        id, wallet_id: wid(),
+        code: data.code, symbol: data.symbol, name: data.name,
+        factor: data.factor, source_url: data.sourceUrl ?? null, order,
+      })
+      .select().single()
+    if (error) throw error
+    const currency = currencyFromDb(row)
+    set(s => ({ currencies: [...s.currencies, currency] }))
+    return currency
+  },
+
+  updateCurrency: async (id, data) => {
+    const dbData: Record<string, unknown> = {}
+    if (data.code !== undefined)   dbData.code = data.code
+    if (data.symbol !== undefined) dbData.symbol = data.symbol
+    if (data.name !== undefined)   dbData.name = data.name
+    if (data.factor !== undefined) dbData.factor = data.factor
+    if (data.sourceUrl !== undefined) dbData.source_url = data.sourceUrl || null
+    if (data.order !== undefined)  dbData.order = data.order
+    const { error } = await supabase.from('cdg_currencies').update(dbData).eq('id', id)
+    if (error) throw error
+    set(s => ({ currencies: s.currencies.map(c => c.id === id ? { ...c, ...data } : c) }))
+  },
+
+  deleteCurrency: async (id) => {
+    // No permitir borrar si alguna cuenta la usa (preferencial o adicional)
+    const inUse = get().accounts.some(a => a.currencyId === id || a.displayCurrencyIds.includes(id))
+    if (inUse) return { error: 'Hay cuentas que usan esta moneda.' }
+    const { error } = await supabase.from('cdg_currencies').delete().eq('id', id)
+    if (error) return { error: error.message }
+    set(s => ({ currencies: s.currencies.filter(c => c.id !== id) }))
+    return { error: null }
+  },
+
+  getCurrency: (id) => id ? get().currencies.find(c => c.id === id) : undefined,
+
+  getRatesForCurrency: (id) =>
+    get().currencyRates
+      .filter(r => r.currencyId === id)
+      .sort((a, b) => b.rateDate.localeCompare(a.rateDate)),
+
+  refreshBcvRates: async () => {
+    const walletId = get().walletId
+    if (!walletId) return { error: 'Sin cartera activa' }
+    const { data, error } = await supabase.rpc('cdg_update_bcv_rates', { p_wallet_id: walletId })
+    if (error) return { error: error.message }
+    // Recargar monedas (factor actualizado) y el histórico de tasas
+    const [currs, rates] = await Promise.all([
+      supabase.from('cdg_currencies').select('*').eq('wallet_id', walletId).order('order'),
+      supabase.from('cdg_currency_rates').select('*').eq('wallet_id', walletId).order('rate_date', { ascending: false }),
+    ])
+    set({
+      currencies:    (currs.data ?? []).map(currencyFromDb),
+      currencyRates: (rates.data ?? []).map(currencyRateFromDb),
+    })
+    return { error: null, rate: (data as { rate?: number } | null)?.rate }
   },
 
   // ─── Períodos ────────────────────────────────────────────────────────────────
@@ -561,10 +647,6 @@ export const useDataStore = create<DataState>()((set, get) => ({
     if (data.currencySymbol !== undefined)    dbData.currency_symbol = data.currencySymbol
     if (data.currencyCode !== undefined)      dbData.currency_code = data.currencyCode
     if (data.currencyName !== undefined)      dbData.currency_name = data.currencyName
-    if (data.altCurrencySymbol !== undefined) dbData.alt_currency_symbol = data.altCurrencySymbol
-    if (data.altCurrencyCode !== undefined)   dbData.alt_currency_code = data.altCurrencyCode
-    if (data.altCurrencyName !== undefined)   dbData.alt_currency_name = data.altCurrencyName
-    if (data.conversionFactor !== undefined)  dbData.conversion_factor = data.conversionFactor
     if (data.locale !== undefined)            dbData.locale = data.locale
     if (data.warningThreshold !== undefined)  dbData.warning_threshold = data.warningThreshold
     const { error } = await supabase.from('cdg_wallet_settings').update(dbData).eq('wallet_id', wid())

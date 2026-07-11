@@ -11,8 +11,9 @@ export function formatCurrencyFull(amount: number, settings: AppSettings): strin
   return `${settings.currencySymbol}${formatCurrency(amount, settings)}`
 }
 
-export function formatCurrencyAlt(amount: number, settings: AppSettings): string {
-  return `${settings.altCurrencySymbol}${new Intl.NumberFormat(settings.locale, {
+/** Formatea un monto con el símbolo de una moneda arbitraria (secundaria). */
+export function formatInCurrency(amount: number, symbol: string, locale = 'es-AR'): string {
+  return `${symbol}${new Intl.NumberFormat(locale, {
     minimumFractionDigits: 0,
     maximumFractionDigits: 2,
   }).format(amount)}`
@@ -22,14 +23,15 @@ export function parseAmount(str: string): number {
   return parseFloat(str.replace(',', '.'))
 }
 
-/** Convierte de moneda oficial a alterna */
+// factor = cuántas unidades de la moneda secundaria equivalen a 1 unidad de la principal
+/** Convierte de moneda principal a secundaria (secundaria = principal × factor) */
 export function toAlt(amount: number, factor: number): number {
-  return factor > 0 ? amount / factor : 0
+  return amount * factor
 }
 
-/** Convierte de moneda alterna a oficial */
+/** Convierte de moneda secundaria a principal (principal = secundaria ÷ factor) */
 export function toOfficial(amountAlt: number, factor: number): number {
-  return amountAlt * factor
+  return factor > 0 ? amountAlt / factor : 0
 }
 
 export function formatDate(dateStr: string): string {

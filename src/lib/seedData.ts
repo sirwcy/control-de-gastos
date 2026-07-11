@@ -6,14 +6,16 @@ export async function seedData() {
 
   await store.updateSettings({
     currencySymbol: '$', currencyCode: 'ARS', currencyName: 'Peso Argentino',
-    altCurrencySymbol: 'U$S', altCurrencyCode: 'USD', altCurrencyName: 'Dólar',
-    conversionFactor: 1000, locale: 'es-AR', warningThreshold: 0.80,
+    locale: 'es-AR', warningThreshold: 0.80,
   })
 
+  // Moneda secundaria de ejemplo (1 $ = 0.001 U$S, es decir 1 U$S = $1.000)
+  const dolar = await store.addCurrency({ code: 'USD', symbol: 'U$S', name: 'Dólar', factor: 0.001 })
+
   // Cuentas
-  const efectivo = await store.addAccount({ name: 'Efectivo',    icon: 'Wallet',      color: '#22c55e', type: 'cash',    initialBalance: 50000,  initialBalanceAlt: 50  })
-  const banco    = await store.addAccount({ name: 'Banco Nación',icon: 'Building2',   color: '#3b82f6', type: 'bank',    initialBalance: 200000, initialBalanceAlt: 200 })
-  const ahorro   = await store.addAccount({ name: 'Ahorro USD',  icon: 'DollarSign',  color: '#f59e0b', type: 'savings', initialBalance: 500000, initialBalanceAlt: 500 })
+  const efectivo = await store.addAccount({ name: 'Efectivo',    icon: 'Wallet',      color: '#22c55e', type: 'cash',    initialBalance: 50000,  initialBalanceAlt: 0, currencyId: undefined, displayCurrencyIds: [dolar.id], showPrimary: false })
+  const banco    = await store.addAccount({ name: 'Banco Nación',icon: 'Building2',   color: '#3b82f6', type: 'bank',    initialBalance: 200000, initialBalanceAlt: 0, currencyId: undefined, displayCurrencyIds: [dolar.id], showPrimary: false })
+  const ahorro   = await store.addAccount({ name: 'Ahorro USD',  icon: 'DollarSign',  color: '#f59e0b', type: 'savings', initialBalance: 500000, initialBalanceAlt: 0, currencyId: undefined, displayCurrencyIds: [dolar.id], showPrimary: false })
 
   // Categorías
   const alim = await store.addCategory({ name: 'Alimentación', icon: 'ShoppingCart', color: '#22c55e' })

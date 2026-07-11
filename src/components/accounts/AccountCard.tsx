@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { MoreVertical } from 'lucide-react'
 import type { Account } from '../../types'
 import { useDataStore } from '../../store/dataStore'
-import { formatCurrencyFull, formatCurrencyAlt } from '../../lib/formatters'
+import { formatInCurrency } from '../../lib/formatters'
 import { CategoryIcon } from '../categories/CategoryIcon'
 import { ACCOUNT_TYPE_LABELS } from '../../lib/constants'
 import { ConfirmDialog } from '../ui/ConfirmDialog'
@@ -13,15 +13,24 @@ interface Props {
 }
 
 export function AccountCard({ account }: Props) {
-  const { getAccountBalance, deleteAccount, settings } = useDataStore()
+  const { getAccountBalance, deleteAccount, getCurrency, settings } = useDataStore()
   const [menuOpen, setMenuOpen] = useState(false)
   const [editing, setEditing] = useState(false)
   const [deleting, setDeleting] = useState(false)
 
   const balanceData = getAccountBalance(account.id)
   const balance    = balanceData?.balance ?? account.initialBalance
-  const balanceAlt = balanceData?.balanceAlt ?? account.initialBalanceAlt
   const isNegative = balance < 0
+
+  // Moneda "principal" como pseudo-moneda (factor 1)
+  const principal = { name: settings.currencyName, symbol: settings.currencySymbol, factor: 1 }
+
+  // Titular de la ficha (preferencial) + equivalencias adicionales
+  const preferred = account.currencyId ? getCurrency(account.currencyId) ?? principal : principal
+  const extras = [
+    ...(account.currencyId && account.showPrimary ? [principal] : []),
+    ...account.displayCurrencyIds.map(id => getCurrency(id)).filter((c): c is NonNullable<typeof c> => !!c),
+  ]
 
   return (
     <>
@@ -38,20 +47,26 @@ export function AccountCard({ account }: Props) {
             </button>
           </div>
 
-          {/* Saldos */}
-          <div className="mt-4 flex items-end justify-between">
-            <div>
-              <p className="text-xs text-slate-400 mb-0.5">{settings.currencyName}</p>
+          {/* Saldos: titular (grande) + equivalencias */}
+          <div className="mt-4 flex items-end justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-xs text-slate-400 mb-0.5">{preferred.name}</p>
               <p className={`text-2xl font-bold ${isNegative ? 'text-red-500' : 'text-slate-800'}`}>
-                {formatCurrencyFull(balance, settings)}
+                {formatInCurrency(balance * preferred.factor, preferred.symbol)}
               </p>
             </div>
-            <div className="text-right">
-              <p className="text-xs text-amber-400 mb-0.5">{settings.altCurrencyName}</p>
-              <p className={`text-base font-semibold ${balanceAlt < 0 ? 'text-red-400' : 'text-amber-600'}`}>
-                {formatCurrencyAlt(balanceAlt, settings)}
-              </p>
-            </div>
+            {extras.length > 0 && (
+              <div className="text-right space-y-0.5 flex-shrink-0">
+                {extras.map((c, i) => (
+                  <div key={i}>
+                    <span className="text-[10px] text-amber-400 mr-1">{c.name}</span>
+                    <span className={`text-sm font-semibold ${isNegative ? 'text-red-400' : 'text-amber-600'}`}>
+                      {formatInCurrency(balance * c.factor, c.symbol)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 

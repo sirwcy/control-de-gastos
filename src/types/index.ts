@@ -36,6 +36,30 @@ export interface CategoryRef {
   subSubcategoryId?: ID
 }
 
+// ─── Monedas ─────────────────────────────────────────────────────────────────
+// La moneda principal vive en AppSettings (factor implícito = 1).
+// Este catálogo son las monedas secundarias, cada una con su factor.
+export interface Currency {
+  id: ID
+  code: string    // "USD"
+  symbol: string  // "U$S"
+  name: string    // "Dólar"
+  factor: number  // cuántas unidades de esta moneda = 1 unidad de la principal
+  sourceUrl?: string  // página web de referencia para consultar la tasa
+  order: number
+  createdAt: string
+}
+
+// Histórico de tasas por fecha (poblado por la fuente externa / cron)
+export interface CurrencyRate {
+  id: ID
+  currencyId: ID
+  rate: number
+  rateDate: string  // YYYY-MM-DD
+  source?: string
+  createdAt: string
+}
+
 // ─── Cuentas ─────────────────────────────────────────────────────────────────
 export type AccountType = 'cash' | 'bank' | 'savings' | 'credit' | 'investment' | 'other'
 
@@ -45,8 +69,11 @@ export interface Account {
   icon: string
   color: string
   type: AccountType
-  initialBalance: number     // saldo inicial en moneda oficial
-  initialBalanceAlt: number  // saldo inicial en moneda alterna
+  initialBalance: number     // saldo inicial en moneda principal
+  initialBalanceAlt: number  // saldo inicial en la moneda preferencial (entrada)
+  currencyId?: ID            // moneda preferencial / titular (undefined = principal)
+  displayCurrencyIds: ID[]   // monedas secundarias adicionales a mostrar en la ficha
+  showPrimary: boolean       // mostrar también la principal cuando la preferencial es secundaria
   order: number
   createdAt: string
 }
@@ -90,16 +117,10 @@ export interface Transaction {
 
 // ─── Configuración ───────────────────────────────────────────────────────────
 export interface AppSettings {
-  // Moneda oficial
+  // Moneda principal (base contable, factor implícito = 1)
   currencySymbol: string   // "$"
   currencyCode: string     // "ARS"
   currencyName: string     // "Peso Argentino"
-  // Moneda alterna
-  altCurrencySymbol: string  // "U$S"
-  altCurrencyCode: string    // "USD"
-  altCurrencyName: string    // "Dólar"
-  // Factor: cuántas unidades de moneda oficial = 1 unidad de moneda alterna
-  conversionFactor: number   // ej: 1000 → $1.000 = U$S 1
   // General
   locale: string
   warningThreshold: number

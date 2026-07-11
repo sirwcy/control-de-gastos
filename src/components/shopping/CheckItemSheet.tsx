@@ -14,7 +14,7 @@ interface Props {
 }
 
 export function CheckItemSheet({ open, onClose, item }: Props) {
-  const { checkShoppingListItem, accounts, settings, categories, subcategories, subSubcategories } = useDataStore()
+  const { checkShoppingListItem, accounts, getCurrency, settings, categories, subcategories, subSubcategories } = useDataStore()
   const [amountStr, setAmountStr] = useState('')
   const [amountAltStr, setAmountAltStr] = useState('')
   const [accountId, setAccountId] = useState('')
@@ -89,6 +89,7 @@ export function CheckItemSheet({ open, onClose, item }: Props) {
         <div>
           <label className="text-xs font-medium text-slate-500 mb-2 block">Monto real gastado</label>
           <DualAmountInput
+            currency={getCurrency(accounts.find(a => a.id === accountId)?.currencyId)}
             valueOfficial={amountStr}
             valueAlt={amountAltStr}
             onChangeOfficial={setAmountStr}

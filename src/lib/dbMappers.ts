@@ -1,5 +1,5 @@
 import type {
-  Category, Subcategory, SubSubcategory, Account,
+  Category, Subcategory, SubSubcategory, Account, Currency, CurrencyRate,
   BudgetPeriod, BudgetItem, Transaction, ShoppingList, ShoppingListItem,
   AppSettings, CategoryRef, CategoryLevel,
 } from '../types'
@@ -42,7 +42,23 @@ export const subSubFromDb      = (r: any): SubSubcategory => ({ id: r.id, subcat
 export const accountFromDb = (r: any): Account => ({
   id: r.id, name: r.name, icon: r.icon, color: r.color, type: r.type,
   initialBalance: Number(r.initial_balance), initialBalanceAlt: Number(r.initial_balance_alt),
+  currencyId: r.currency_id ?? undefined,
+  displayCurrencyIds: r.display_currency_ids ?? [],
+  showPrimary: r.show_primary ?? false,
   order: r.order, createdAt: r.created_at,
+})
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export const currencyFromDb = (r: any): Currency => ({
+  id: r.id, code: r.code, symbol: r.symbol, name: r.name,
+  factor: Number(r.factor), sourceUrl: r.source_url ?? undefined,
+  order: r.order, createdAt: r.created_at,
+})
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export const currencyRateFromDb = (r: any): CurrencyRate => ({
+  id: r.id, currencyId: r.currency_id, rate: Number(r.rate),
+  rateDate: r.rate_date, source: r.source ?? undefined, createdAt: r.created_at,
 })
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -86,6 +102,5 @@ export const shoppingListItemFromDb = (r: any): ShoppingListItem => ({
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const settingsFromDb = (r: any): AppSettings => ({
   currencySymbol: r.currency_symbol, currencyCode: r.currency_code, currencyName: r.currency_name,
-  altCurrencySymbol: r.alt_currency_symbol, altCurrencyCode: r.alt_currency_code, altCurrencyName: r.alt_currency_name,
-  conversionFactor: Number(r.conversion_factor), locale: r.locale, warningThreshold: Number(r.warning_threshold),
+  locale: r.locale, warningThreshold: Number(r.warning_threshold),
 })

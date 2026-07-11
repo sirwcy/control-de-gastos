@@ -16,7 +16,7 @@ type Step = 'type-account' | 'amount' | 'category' | 'details'
 export function TransactionFormSheet() {
   const {
     addTransaction, updateTransaction, transactions,
-    accounts, categories, subcategories, subSubcategories, budgetPeriods,
+    accounts, categories, subcategories, subSubcategories, budgetPeriods, getCurrency,
   } = useDataStore()
   const { transactionSheetOpen, editTransactionId, defaultTransactionType, closeTransactionSheet } = useUIStore()
   const { currentWalletId } = useAuthStore()
@@ -207,6 +207,7 @@ export function TransactionFormSheet() {
       {step === 'amount' && (
         <div className="p-5 space-y-5">
           <DualAmountInput
+            currency={getCurrency(accounts.find(a => a.id === accountId)?.currencyId)}
             valueOfficial={amountStr}
             valueAlt={amountAltStr}
             onChangeOfficial={setAmountStr}

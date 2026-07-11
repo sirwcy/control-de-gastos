@@ -4,7 +4,7 @@ import type { Transaction } from '../../types'
 import { getImageUrl } from '../../lib/imageStore'
 import { useDataStore } from '../../store/dataStore'
 import { useUIStore } from '../../store/uiStore'
-import { formatCurrencyFull, formatCurrencyAlt, formatDateShort } from '../../lib/formatters'
+import { formatCurrencyFull, formatInCurrency, formatDateShort } from '../../lib/formatters'
 import { getFullPath, getCategoryForRef } from '../../lib/categoryHelpers'
 import { CategoryIcon } from '../categories/CategoryIcon'
 import { ConfirmDialog } from '../ui/ConfirmDialog'
@@ -14,7 +14,7 @@ interface Props {
 }
 
 export function TransactionCard({ transaction }: Props) {
-  const { deleteTransaction, categories, subcategories, subSubcategories, accounts, settings } = useDataStore()
+  const { deleteTransaction, categories, subcategories, subSubcategories, accounts, getCurrency, settings } = useDataStore()
   const { openEditTransaction } = useUIStore()
   const [showActions, setShowActions] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
@@ -32,6 +32,7 @@ export function TransactionCard({ transaction }: Props) {
     ? getFullPath(transaction.categoryRef, categories, subcategories, subSubcategories)
     : undefined
   const account = accounts.find(a => a.id === transaction.accountId)
+  const currency = getCurrency(account?.currencyId)
 
   return (
     <>
@@ -71,9 +72,11 @@ export function TransactionCard({ transaction }: Props) {
           <p className={`text-sm font-bold ${isIncome ? 'text-emerald-600' : 'text-slate-800'}`}>
             {isIncome ? '+' : '-'}{formatCurrencyFull(transaction.amount, settings)}
           </p>
-          <p className="text-xs text-amber-500">
-            {formatCurrencyAlt(transaction.amountAlt, settings)}
-          </p>
+          {currency && (
+            <p className="text-xs text-amber-500">
+              {formatInCurrency(transaction.amountAlt, currency.symbol)}
+            </p>
+          )}
           <p className="text-xs text-slate-400 mt-0.5">{formatDateShort(transaction.date)}</p>
           {transaction.imageId && (
             <button

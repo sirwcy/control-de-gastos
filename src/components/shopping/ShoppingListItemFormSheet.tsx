@@ -23,7 +23,7 @@ interface Props {
 type Step = 'details' | 'category'
 
 export function ShoppingListItemFormSheet({ open, onClose, listId, editing }: Props) {
-  const { addShoppingListItem, updateShoppingListItem, categories, subcategories, subSubcategories } = useDataStore()
+  const { addShoppingListItem, updateShoppingListItem, currencies, categories, subcategories, subSubcategories } = useDataStore()
   const [step, setStep] = useState<Step>('details')
   const [name, setName] = useState('')
   const [categoryRef, setCategoryRef] = useState<CategoryRef | null>(null)
@@ -118,6 +118,7 @@ export function ShoppingListItemFormSheet({ open, onClose, listId, editing }: Pr
         <div>
           <label className="text-xs font-medium text-slate-500 mb-2 block">Monto estimado</label>
           <DualAmountInput
+            currency={currencies[0]}
             valueOfficial={amountStr}
             valueAlt={amountAltStr}
             onChangeOfficial={setAmountStr}
