@@ -111,6 +111,7 @@ export interface Transaction {
   description: string
   notes?: string
   imageId?: ID
+  createdBy?: ID             // usuario que registró el movimiento
   createdAt: string
   updatedAt: string
 }

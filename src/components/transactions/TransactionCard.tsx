@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react'
-import { Trash2, Pencil, TrendingUp, TrendingDown, Camera, X } from 'lucide-react'
+import { Trash2, Pencil, TrendingUp, TrendingDown, Camera, X, User } from 'lucide-react'
 import type { Transaction } from '../../types'
 import { getImageUrl } from '../../lib/imageStore'
 import { useDataStore } from '../../store/dataStore'
 import { useUIStore } from '../../store/uiStore'
+import { useAuthStore } from '../../store/authStore'
 import { formatCurrencyFull, formatInCurrency, formatDateShort } from '../../lib/formatters'
 import { getFullPath, getCategoryForRef } from '../../lib/categoryHelpers'
 import { CategoryIcon } from '../categories/CategoryIcon'
@@ -14,8 +15,9 @@ interface Props {
 }
 
 export function TransactionCard({ transaction }: Props) {
-  const { deleteTransaction, categories, subcategories, subSubcategories, accounts, getCurrency, settings } = useDataStore()
+  const { deleteTransaction, categories, subcategories, subSubcategories, accounts, getCurrency, getMemberName, settings } = useDataStore()
   const { openEditTransaction } = useUIStore()
+  const { user, currentRole } = useAuthStore()
   const [showActions, setShowActions] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [viewingImage, setViewingImage] = useState(false)
@@ -33,6 +35,12 @@ export function TransactionCard({ transaction }: Props) {
     : undefined
   const account = accounts.find(a => a.id === transaction.accountId)
   const currency = getCurrency(account?.currencyId)
+
+  // Autor del movimiento
+  const isMine = !!transaction.createdBy && transaction.createdBy === user?.id
+  const creatorName = isMine ? 'vos' : (getMemberName(transaction.createdBy) ?? 'Desconocido')
+  // Permisos: admin edita/borra todo; ejecutor solo lo propio; lector nada
+  const canModify = currentRole === 'admin' || (currentRole === 'executor' && isMine)
 
   return (
     <>
@@ -90,19 +98,41 @@ export function TransactionCard({ transaction }: Props) {
       </div>
 
       {showActions && (
-        <div className="flex gap-2 px-4">
-          <button
-            onClick={() => { openEditTransaction(transaction.id); setShowActions(false) }}
-            className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-brand-50 text-brand-600 rounded-xl text-xs font-medium"
-          >
-            <Pencil size={13} /> Editar
-          </button>
-          <button
-            onClick={() => { setConfirmDelete(true); setShowActions(false) }}
-            className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-red-50 text-red-500 rounded-xl text-xs font-medium"
-          >
-            <Trash2 size={13} /> Eliminar
-          </button>
+        <div className="px-4 pb-1 space-y-2">
+          {/* Detalle: observaciones + autor */}
+          <div className="bg-slate-50 rounded-xl px-3 py-2.5 text-xs space-y-1.5">
+            {transaction.notes && (
+              <p className="text-slate-500">
+                <span className="font-semibold text-slate-600">Observaciones: </span>
+                {transaction.notes}
+              </p>
+            )}
+            <p className="flex items-center gap-1.5 text-slate-400">
+              <User size={12} />
+              Registrado por <span className="font-medium text-slate-600">{creatorName}</span>
+            </p>
+          </div>
+
+          {canModify ? (
+            <div className="flex gap-2">
+              <button
+                onClick={() => { openEditTransaction(transaction.id); setShowActions(false) }}
+                className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-brand-50 text-brand-600 rounded-xl text-xs font-medium"
+              >
+                <Pencil size={13} /> Editar
+              </button>
+              <button
+                onClick={() => { setConfirmDelete(true); setShowActions(false) }}
+                className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-red-50 text-red-500 rounded-xl text-xs font-medium"
+              >
+                <Trash2 size={13} /> Eliminar
+              </button>
+            </div>
+          ) : (
+            <p className="text-[11px] text-slate-400 text-center py-1.5">
+              Solo un administrador o quien lo registró puede editarlo.
+            </p>
+          )}
         </div>
       )}
 

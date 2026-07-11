@@ -82,6 +82,7 @@ export const transactionFromDb = (r: any): Transaction => ({
   amount: Number(r.amount), amountAlt: Number(r.amount_alt),
   date: r.date, description: r.description, notes: r.notes ?? undefined,
   imageId: r.image_path ?? undefined,
+  createdBy: r.created_by ?? undefined,
   createdAt: r.created_at, updatedAt: r.updated_at,
 })
 

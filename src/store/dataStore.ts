@@ -23,6 +23,13 @@ const DEFAULT_SETTINGS: AppSettings = {
   locale: 'es-AR', warningThreshold: 0.80,
 }
 
+// Perfil resumido de un miembro de la cartera (para atribuir autoría)
+export interface MemberProfile {
+  userId: string
+  displayName: string
+  username: string | null
+}
+
 interface DataState {
   walletId: string | null
   loading: boolean
@@ -39,6 +46,8 @@ interface DataState {
   settings: AppSettings
   shoppingLists: ShoppingList[]
   shoppingListItems: ShoppingListItem[]
+  members: MemberProfile[]
+  getMemberName: (userId: ID | undefined) => string | undefined
 
   // Lifecycle
   loadWalletData: (walletId: string) => Promise<void>
@@ -120,13 +129,17 @@ export const useDataStore = create<DataState>()((set, get) => ({
   settings:        DEFAULT_SETTINGS,
   shoppingLists:   [],
   shoppingListItems:[],
+  members:         [],
+
+  getMemberName: (userId) =>
+    userId ? get().members.find(m => m.userId === userId)?.displayName : undefined,
 
   // ─── Lifecycle ─────────────────────────────────────────────────────────────
   loadWalletData: async (walletId) => {
     set({ walletId, loading: true })
     const W = walletId
 
-    const [cats, subs, subsubs, accs, currs, rates, periods, items, txs, lists, listItems, settRow] = await Promise.all([
+    const [cats, subs, subsubs, accs, currs, rates, periods, items, txs, lists, listItems, settRow, mems] = await Promise.all([
       supabase.from('cdg_categories').select('*').eq('wallet_id', W).order('order'),
       supabase.from('cdg_subcategories').select('*').eq('wallet_id', W).order('order'),
       supabase.from('cdg_sub_subcategories').select('*').eq('wallet_id', W).order('order'),
@@ -139,7 +152,20 @@ export const useDataStore = create<DataState>()((set, get) => ({
       supabase.from('cdg_shopping_lists').select('*').eq('wallet_id', W).order('created_at'),
       supabase.from('cdg_shopping_list_items').select('*').eq('wallet_id', W).order('created_at'),
       supabase.from('cdg_wallet_settings').select('*').eq('wallet_id', W).single(),
+      supabase.from('cdg_wallet_members').select('user_id').eq('wallet_id', W),
     ])
+
+    // Perfiles de los miembros (para mostrar el autor de cada movimiento).
+    // No hay FK members→profiles, así que se traen aparte.
+    const memberIds = (mems.data ?? []).map(m => m.user_id)
+    let members: MemberProfile[] = []
+    if (memberIds.length > 0) {
+      const { data: profs } = await supabase
+        .from('cdg_profiles')
+        .select('id, display_name, username')
+        .in('id', memberIds)
+      members = (profs ?? []).map(p => ({ userId: p.id, displayName: p.display_name, username: p.username }))
+    }
 
     set({
       categories:       (cats.data      ?? []).map(categoryFromDb),
@@ -154,6 +180,7 @@ export const useDataStore = create<DataState>()((set, get) => ({
       shoppingLists:    (lists.data     ?? []).map(shoppingListFromDb),
       shoppingListItems:(listItems.data ?? []).map(shoppingListItemFromDb),
       settings:         settRow.data ? settingsFromDb(settRow.data) : DEFAULT_SETTINGS,
+      members,
       loading: false,
     })
   },
@@ -162,7 +189,7 @@ export const useDataStore = create<DataState>()((set, get) => ({
     walletId: null, loading: false,
     categories: [], subcategories: [], subSubcategories: [], accounts: [], currencies: [], currencyRates: [],
     budgetPeriods: [], budgetItems: [], transactions: [], settings: DEFAULT_SETTINGS,
-    shoppingLists: [], shoppingListItems: [],
+    shoppingLists: [], shoppingListItems: [], members: [],
   }),
 
   // ─── Categorías ─────────────────────────────────────────────────────────────
@@ -466,6 +493,7 @@ export const useDataStore = create<DataState>()((set, get) => ({
   // ─── Transacciones ───────────────────────────────────────────────────────────
   addTransaction: async (data) => {
     const id = uuid()
+    const { data: { session } } = await supabase.auth.getSession()
     const { data: row, error } = await supabase
       .from('cdg_transactions')
       .insert({
@@ -475,6 +503,7 @@ export const useDataStore = create<DataState>()((set, get) => ({
         amount: data.amount, amount_alt: data.amountAlt,
         date: data.date, description: data.description, notes: data.notes ?? null,
         image_path: data.imageId ?? null,
+        created_by: session?.user?.id ?? null,
         ...categoryRefToDb(data.categoryRef),
       })
       .select().single()
