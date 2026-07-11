@@ -11,10 +11,11 @@ import { supabase } from '../lib/supabase'
 type Tab = 'categorias' | 'monedas' | 'miembros'
 
 export function ConfigPage() {
-  const { currentWalletId } = useAuthStore()
+  const { currentWalletId, currentWalletType } = useAuthStore()
   const [tab, setTab]         = useState<Tab>('categorias')
   const [formOpen, setFormOpen] = useState(false)
   const [isAdmin, setIsAdmin]   = useState(false)
+  const isGroup = currentWalletType === 'family'
 
   useEffect(() => {
     if (!currentWalletId) return
@@ -52,7 +53,7 @@ export function ConfigPage() {
         >
           Monedas
         </button>
-        {isAdmin && (
+        {isGroup && isAdmin && (
           <button
             onClick={() => setTab('miembros')}
             className={`flex-1 py-2 rounded-xl text-sm font-semibold transition-colors ${tab === 'miembros' ? 'bg-brand-500 text-white' : 'bg-slate-100 text-slate-500'}`}
@@ -75,7 +76,7 @@ export function ConfigPage() {
         </div>
       )}
 
-      {tab === 'miembros' && <MembersTab />}
+      {tab === 'miembros' && isGroup && <MembersTab />}
     </div>
   )
 }

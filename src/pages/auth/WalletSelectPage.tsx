@@ -8,6 +8,7 @@ interface WalletEntry {
   name: string
   type: 'personal' | 'family'
   role: string
+  memberCount: number
 }
 
 interface PendingInvite {
@@ -43,7 +44,8 @@ export function WalletSelectPage() {
     setFetching(true)
 
     const [membershipsRes, invitesRes] = await Promise.all([
-      supabase.from('cdg_wallet_members').select('wallet_id, role'),
+      // La RLS devuelve TODOS los miembros de las carteras del usuario, no solo su fila.
+      supabase.from('cdg_wallet_members').select('wallet_id, user_id, role'),
       supabase
         .from('cdg_invitations')
         .select('id, wallet_id, role, token, cdg_wallets(name)')
@@ -52,7 +54,13 @@ export function WalletSelectPage() {
     ])
 
     if (membershipsRes.data && membershipsRes.data.length > 0) {
-      const ids = membershipsRes.data.map(m => m.wallet_id)
+      const memberRows = membershipsRes.data
+      const ids = [...new Set(memberRows.map(m => m.wallet_id))]
+
+      // Cantidad de miembros por cartera (a partir de las filas ya traídas)
+      const countByWallet = new Map<string, number>()
+      for (const m of memberRows) countByWallet.set(m.wallet_id, (countByWallet.get(m.wallet_id) ?? 0) + 1)
+
       const { data: walletData } = await supabase
         .from('cdg_wallets')
         .select('id, name, type')
@@ -63,7 +71,9 @@ export function WalletSelectPage() {
         (walletData ?? []).map(w => ({
           ...w,
           type: w.type as 'personal' | 'family',
-          role: membershipsRes.data!.find(m => m.wallet_id === w.id)?.role ?? 'reader',
+          // El rol es el de MI fila en esta cartera, no el del primer miembro.
+          role: memberRows.find(m => m.wallet_id === w.id && m.user_id === user?.id)?.role ?? 'reader',
+          memberCount: countByWallet.get(w.id) ?? 1,
         }))
       )
     }
@@ -190,7 +200,9 @@ export function WalletSelectPage() {
               <div className="flex-1 min-w-0">
                 <p className="font-semibold text-slate-800 truncate">{w.name}</p>
                 <p className="text-xs text-slate-400">
-                  {w.type === 'family' ? 'Familiar' : 'Personal'} · {ROLE_LABEL[w.role] ?? w.role}
+                  {w.type === 'family'
+                    ? `Grupal · ${w.memberCount} ${w.memberCount === 1 ? 'miembro' : 'miembros'} · ${ROLE_LABEL[w.role] ?? w.role}`
+                    : `Personal · ${ROLE_LABEL[w.role] ?? w.role}`}
                 </p>
               </div>
               <ChevronRight size={16} className="text-slate-300 flex-shrink-0" />
@@ -250,15 +262,15 @@ export function WalletSelectPage() {
                   >
                     <Users size={22} className={newType === 'family' ? 'text-brand-600' : 'text-slate-400'} />
                     <span className={`text-xs font-semibold ${newType === 'family' ? 'text-brand-600' : 'text-slate-500'}`}>
-                      Familiar
+                      Grupal
                     </span>
                   </button>
                 </div>
-                {newType === 'family' && (
-                  <p className="text-[11px] text-slate-400 mt-1.5 text-center">
-                    Podrás invitar miembros desde el panel de administración
-                  </p>
-                )}
+                <p className="text-[11px] text-slate-400 mt-1.5 text-center">
+                  {newType === 'family'
+                    ? 'Podrás invitar o crear miembros desde el panel de administración.'
+                    : 'Cartera individual: sin miembros ni invitaciones.'}
+                </p>
               </div>
 
               {createError && (
