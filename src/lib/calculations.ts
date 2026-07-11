@@ -72,12 +72,22 @@ export function computeDashboard(params: {
 
       const spent    = (expBySub.get(sub.id) ?? 0) + subSubRollups.reduce((s, r) => s + r.spent, 0)
       const budgeted = (budBySub.get(sub.id) ?? 0) + subSubRollups.reduce((s, r) => s + r.budgeted, 0)
-      return { subcategory: sub, budgeted, spent, percentage: pct(spent, budgeted), status: computeStatus(spent, budgeted, warningThreshold), subSubcategories: subSubRollups }
+      // Solo mostrar sub-subcategorías con gasto o presupuesto (el resto no aporta al total)
+      return {
+        subcategory: sub, budgeted, spent,
+        percentage: pct(spent, budgeted), status: computeStatus(spent, budgeted, warningThreshold),
+        subSubcategories: subSubRollups.filter(r => r.budgeted > 0 || r.spent > 0),
+      }
     })
 
     const spent    = (expByCat.get(cat.id) ?? 0) + subcatRollups.reduce((s, r) => s + r.spent, 0)
     const budgeted = (budByCat.get(cat.id) ?? 0) + subcatRollups.reduce((s, r) => s + r.budgeted, 0)
-    return { category: cat, budgeted, spent, percentage: pct(spent, budgeted), status: computeStatus(spent, budgeted, warningThreshold), subcategories: subcatRollups }
+    // Solo mostrar subcategorías con gasto o presupuesto
+    return {
+      category: cat, budgeted, spent,
+      percentage: pct(spent, budgeted), status: computeStatus(spent, budgeted, warningThreshold),
+      subcategories: subcatRollups.filter(r => r.budgeted > 0 || r.spent > 0),
+    }
   })
 
   const activeRollups = rollups.filter(r => r.budgeted > 0 || r.spent > 0)
