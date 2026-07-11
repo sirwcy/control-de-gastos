@@ -5,7 +5,7 @@ import { useAuthStore } from '../../store/authStore'
 
 export function LoginPage() {
   const { signIn } = useAuthStore()
-  const [email, setEmail]       = useState('')
+  const [identifier, setIdentifier] = useState('')
   const [password, setPassword] = useState('')
   const [showPass, setShowPass] = useState(false)
   const [error, setError]       = useState<string | null>(null)
@@ -15,7 +15,7 @@ export function LoginPage() {
     e.preventDefault()
     setError(null)
     setLoading(true)
-    const { error } = await signIn(email.trim(), password)
+    const { error } = await signIn(identifier.trim(), password)
     if (error) setError(error)
     setLoading(false)
   }
@@ -39,14 +39,14 @@ export function LoginPage() {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="text-xs font-medium text-slate-500 mb-1.5 block">Email</label>
+            <label className="text-xs font-medium text-slate-500 mb-1.5 block">Usuario o email</label>
             <input
-              type="email"
-              autoComplete="email"
+              type="text"
+              autoComplete="username"
               autoFocus
-              value={email}
-              onChange={e => setEmail(e.target.value)}
-              placeholder="tu@email.com"
+              value={identifier}
+              onChange={e => setIdentifier(e.target.value)}
+              placeholder="usuario o tu@email.com"
               required
               className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-800 outline-none focus:border-brand-500"
             />
@@ -80,7 +80,7 @@ export function LoginPage() {
 
           <button
             type="submit"
-            disabled={loading || !email || !password}
+            disabled={loading || !identifier || !password}
             className="w-full py-3.5 bg-brand-500 text-white font-bold rounded-2xl disabled:opacity-40 text-sm"
           >
             {loading ? 'Ingresando...' : 'Ingresar'}

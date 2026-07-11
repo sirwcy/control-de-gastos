@@ -6,6 +6,7 @@ import { useAuthStore } from '../../store/authStore'
 export function RegisterPage() {
   const { signUp } = useAuthStore()
   const [displayName, setDisplayName] = useState('')
+  const [username, setUsername]       = useState('')
   const [email, setEmail]             = useState('')
   const [password, setPassword]       = useState('')
   const [showPass, setShowPass]       = useState(false)
@@ -16,9 +17,14 @@ export function RegisterPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (password.length < 6) { setError('La contraseña debe tener al menos 6 caracteres'); return }
+    const cleanUser = username.trim().toLowerCase()
+    if (!/^[a-z0-9._-]{3,20}$/.test(cleanUser)) {
+      setError('El usuario debe tener 3-20 caracteres (letras, números, . _ -)')
+      return
+    }
     setError(null)
     setLoading(true)
-    const { error, needsConfirmation } = await signUp(email.trim(), password, displayName.trim())
+    const { error, needsConfirmation } = await signUp(email.trim(), password, displayName.trim(), cleanUser)
     setLoading(false)
     if (error) { setError(error); return }
     if (needsConfirmation) setConfirmed(true)
@@ -81,6 +87,20 @@ export function RegisterPage() {
           </div>
 
           <div>
+            <label className="text-xs font-medium text-slate-500 mb-1.5 block">Nombre de usuario</label>
+            <input
+              type="text"
+              autoComplete="username"
+              value={username}
+              onChange={e => setUsername(e.target.value)}
+              placeholder="ej: juanp"
+              required
+              className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-800 outline-none focus:border-brand-500"
+            />
+            <p className="text-[11px] text-slate-400 mt-1">Lo usarás para iniciar sesión (también podés usar tu email).</p>
+          </div>
+
+          <div>
             <label className="text-xs font-medium text-slate-500 mb-1.5 block">Email</label>
             <input
               type="email"
@@ -121,7 +141,7 @@ export function RegisterPage() {
 
           <button
             type="submit"
-            disabled={loading || !email || !password || !displayName}
+            disabled={loading || !email || !password || !displayName || !username}
             className="w-full py-3.5 bg-brand-500 text-white font-bold rounded-2xl disabled:opacity-40 text-sm"
           >
             {loading ? 'Creando cuenta...' : 'Crear cuenta'}

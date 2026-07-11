@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { BottomNav } from './components/layout/BottomNav'
+import { TopBar } from './components/layout/TopBar'
 import { DashboardPage } from './pages/DashboardPage'
 import { TransactionsPage } from './pages/TransactionsPage'
 import { AccountsPage } from './pages/AccountsPage'
@@ -65,6 +66,7 @@ function MainApp() {
 
   return (
     <div className="relative min-h-svh pb-nav">
+      <TopBar />
       <Routes>
         <Route path="/"            element={<DashboardPage />} />
         <Route path="/movimientos" element={<TransactionsPage />} />
