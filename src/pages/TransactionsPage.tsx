@@ -44,6 +44,21 @@ export function TransactionsPage() {
     setSearchParams(searchParams, { replace: true })
   }
 
+  // Categoría de nivel superior activa (para resaltar el chip aunque el filtro sea una sub/sub-sub)
+  const activeTopCategoryId = useMemo(() => {
+    if (!catFilter) return null
+    if (catFilter.level === 'category') return catFilter.id
+    if (catFilter.level === 'subcategory') return subcategories.find(s => s.id === catFilter.id)?.categoryId ?? null
+    const ss = subSubcategories.find(s => s.id === catFilter.id)
+    return ss ? subcategories.find(s => s.id === ss.subcategoryId)?.categoryId ?? null : null
+  }, [catFilter, subcategories, subSubcategories])
+
+  const setCategoryFilter = (catId: string | 'all') => {
+    if (catId === 'all') searchParams.delete('cat')
+    else searchParams.set('cat', `category:${catId}`)
+    setSearchParams(searchParams, { replace: true })
+  }
+
   const periodTransactions = useMemo(() => {
     return transactions
       .filter(t => {
@@ -95,6 +110,27 @@ export function TransactionsPage() {
           </button>
         ))}
       </div>
+
+      {/* Filtro por categoría */}
+      {categories.length > 0 && (
+        <div className="px-4 pt-2 flex gap-2 overflow-x-auto pb-1">
+          <button
+            onClick={() => setCategoryFilter('all')}
+            className={`flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${activeTopCategoryId === null ? 'bg-brand-500 text-white' : 'bg-slate-100 text-slate-500'}`}
+          >
+            Todas las categorías
+          </button>
+          {categories.map(c => (
+            <button
+              key={c.id}
+              onClick={() => setCategoryFilter(c.id)}
+              className={`flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${activeTopCategoryId === c.id ? 'bg-brand-500 text-white' : 'bg-slate-100 text-slate-500'}`}
+            >
+              {c.name}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Filtro por cuenta */}
       {accounts.length > 1 && (
