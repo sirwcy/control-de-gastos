@@ -12,7 +12,12 @@ npm run preview   # Preview del build de producción
 
 Para verificar tipos: `node ./node_modules/typescript/bin/tsc --noEmit`
 
-Para redeploy a Netlify: `npm run build` → MCP `netlify-deploy-services-updater` con `dist/` y `siteId: a6b60e8d-abea-4ab9-9c21-d70e8f23bf3c`
+## Despliegue
+
+**Auto-deploy desde GitHub** (rama `main`). Netlify está conectado al repo: cada `git push` a `main` dispara build (`npm run build`) y publica en `sicdg.netlify.app`. **No hay redeploy manual** — basta con commitear y pushear.
+
+- Build command: `npm run build` · Publish directory: `dist`
+- Las variables de entorno viven en Netlify (*Project configuration → Environment variables*); un cambio de variable requiere un redeploy (Deploys → Trigger deploy → *Clear cache and deploy*).
 
 ## Infraestructura
 
@@ -25,7 +30,7 @@ Para redeploy a Netlify: `npm run build` → MCP `netlify-deploy-services-update
 
 Variables de entorno requeridas (en `.env.local` y en Netlify):
 - `VITE_SUPABASE_URL`
-- `VITE_SUPABASE_ANON_KEY`
+- `VITE_SUPABASE_ANON_KEY` — acepta cualquiera de los dos formatos de clave pública de Supabase: la anon JWT vieja (`eyJ...`) o la publishable nueva (`sb_publishable_...`). Nota: hoy `.env.local` usa la JWT y Netlify usa la publishable; ambas son válidas.
 
 ## Stack
 
