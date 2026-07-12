@@ -1,4 +1,4 @@
-import { LogOut, Wallet } from 'lucide-react'
+import { LogOut, Wallet, Users, User } from 'lucide-react'
 import { useAuthStore } from '../../store/authStore'
 
 const ROLE_LABEL: Record<string, string> = {
@@ -14,31 +14,36 @@ const ROLE_CHIP: Record<string, string> = {
 }
 
 export function TopBar() {
-  const { user, currentRole, signOut, clearCurrentWallet } = useAuthStore()
+  const { user, currentRole, currentWalletName, currentWalletType, signOut, clearCurrentWallet } = useAuthStore()
 
   const displayName =
     (user?.user_metadata?.display_name as string | undefined) ??
     user?.email?.split('@')[0] ??
     'Usuario'
 
+  const WalletTypeIcon = currentWalletType === 'family' ? Users : User
+
   return (
     <div className="flex items-center justify-between px-5 py-2.5 bg-white border-b border-slate-100">
-      {/* Usuario + rol */}
+      {/* Cartera activa (titular) + usuario/rol */}
       <div className="flex items-center gap-2.5 min-w-0">
         <div className="w-8 h-8 rounded-full bg-brand-50 flex items-center justify-center flex-shrink-0">
-          <span className="text-sm font-bold text-brand-600">
-            {displayName.charAt(0).toUpperCase()}
-          </span>
+          <WalletTypeIcon size={16} className="text-brand-600" />
         </div>
         <div className="min-w-0">
-          <p className="text-sm font-semibold text-slate-800 truncate leading-tight">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <p className="text-sm font-semibold text-slate-800 truncate leading-tight">
+              {currentWalletName ?? 'Cartera'}
+            </p>
+            {currentRole && (
+              <span className={`flex-shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded-full ${ROLE_CHIP[currentRole] ?? 'bg-slate-100 text-slate-600'}`}>
+                {ROLE_LABEL[currentRole] ?? currentRole}
+              </span>
+            )}
+          </div>
+          <p className="text-[11px] text-slate-400 truncate leading-tight">
             {displayName}
           </p>
-          {currentRole && (
-            <span className={`inline-block text-[10px] font-medium px-1.5 py-0.5 rounded-full ${ROLE_CHIP[currentRole] ?? 'bg-slate-100 text-slate-600'}`}>
-              {ROLE_LABEL[currentRole] ?? currentRole}
-            </span>
-          )}
         </div>
       </div>
 

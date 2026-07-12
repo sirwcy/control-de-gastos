@@ -10,6 +10,7 @@ interface AuthState {
   currentWalletId: string | null
   currentRole:     string | null
   currentWalletType: 'personal' | 'family' | null
+  currentWalletName: string | null
   loading:         boolean
 
   initialize:       () => Promise<void>
@@ -29,6 +30,7 @@ export const useAuthStore = create<AuthState>()(
       currentWalletId: null,
       currentRole:     null,
       currentWalletType: null,
+      currentWalletName: null,
       loading:         true,
 
       initialize: async () => {
@@ -47,7 +49,7 @@ export const useAuthStore = create<AuthState>()(
           set({ session, user: session?.user ?? null })
           if (event === 'SIGNED_OUT') {
             useDataStore.getState().clearWalletData()
-            set({ currentWalletId: null, currentRole: null, currentWalletType: null })
+            set({ currentWalletId: null, currentRole: null, currentWalletType: null, currentWalletName: null })
           }
         })
       },
@@ -74,7 +76,7 @@ export const useAuthStore = create<AuthState>()(
       signOut: async () => {
         await supabase.auth.signOut()
         useDataStore.getState().clearWalletData()
-        set({ user: null, session: null, currentWalletId: null, currentRole: null, currentWalletType: null })
+        set({ user: null, session: null, currentWalletId: null, currentRole: null, currentWalletType: null, currentWalletName: null })
       },
 
       setCurrentWallet: (walletId) => {
@@ -86,17 +88,18 @@ export const useAuthStore = create<AuthState>()(
       // Vuelve a la pantalla de selección de cartera sin cerrar sesión
       clearCurrentWallet: () => {
         useDataStore.getState().clearWalletData()
-        set({ currentWalletId: null, currentRole: null, currentWalletType: null })
+        set({ currentWalletId: null, currentRole: null, currentWalletType: null, currentWalletName: null })
       },
 
       refreshRole: async (walletId) => {
         const [{ data: role }, { data: wallet }] = await Promise.all([
           supabase.rpc('cdg_wallet_role', { p_wallet_id: walletId }),
-          supabase.from('cdg_wallets').select('type').eq('id', walletId).single(),
+          supabase.from('cdg_wallets').select('type, name').eq('id', walletId).single(),
         ])
         set({
           currentRole: role ?? null,
           currentWalletType: (wallet?.type as 'personal' | 'family' | undefined) ?? null,
+          currentWalletName: (wallet?.name as string | undefined) ?? null,
         })
       },
     }),
