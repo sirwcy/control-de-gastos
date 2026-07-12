@@ -8,9 +8,13 @@ import { CategoryFormSheet } from './CategoryFormSheet'
 interface Props {
   value: CategoryRef | null
   onChange: (ref: CategoryRef) => void
+  // Si true, tocar una categoría con subcategorías solo la despliega (no se puede
+  // elegir a nivel categoría). Solo se permite seleccionar la categoría si no tiene
+  // subcategorías. Usado para gastos, donde la subcategoría es obligatoria.
+  requireSubcategory?: boolean
 }
 
-export function CategoryPicker({ value, onChange }: Props) {
+export function CategoryPicker({ value, onChange, requireSubcategory = false }: Props) {
   const { categories, subcategories, subSubcategories, addSubcategory, addSubSubcategory } = useDataStore()
   const sorted = [...categories].sort((a, b) => a.order - b.order)
 
@@ -90,6 +94,11 @@ export function CategoryPicker({ value, onChange }: Props) {
             <div className="flex items-center gap-3 px-5 py-3">
               <button
                 onClick={() => {
+                  // Con subcategoría obligatoria: si tiene subs, solo desplegar (no seleccionar)
+                  if (requireSubcategory && catSubs.length > 0) {
+                    setExpandedCat(isCatExpanded ? null : cat.id)
+                    return
+                  }
                   onChange(catRef)
                   if (catSubs.length > 0) setExpandedCat(cat.id)
                 }}
