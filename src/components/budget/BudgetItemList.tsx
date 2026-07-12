@@ -2,7 +2,6 @@ import { useMemo, useState } from 'react'
 import { Trash2, PieChart, ChevronDown, ChevronRight } from 'lucide-react'
 import { useDataStore } from '../../store/dataStore'
 import type { BudgetItem, BudgetStatus, AppSettings } from '../../types'
-import { getFullPath } from '../../lib/categoryHelpers'
 import { formatCurrencyFull } from '../../lib/formatters'
 import { STATUS_TEXT_COLORS } from '../../lib/constants'
 import { ConfirmDialog } from '../ui/ConfirmDialog'
@@ -201,106 +200,92 @@ export function BudgetItemList({ periodId }: Props) {
         const catPct     = pct(catSpent, catBudgeted)
         const catKey     = `cat-${cat.id}`
         const isCollapsed = collapsed.has(catKey)
-        const hasChildren = catDirectItems.length > 0 || subTree.length > 0
+        const catDirectItem = catDirectItems[0]
+        const hasChildren = subTree.length > 0
 
         return (
           <div key={cat.id} className="bg-white rounded-2xl shadow-sm overflow-hidden">
             {/* Cabecera de categoría */}
-            <button
-              onClick={() => toggleCollapse(catKey)}
-              className="w-full flex items-center gap-3 px-4 py-3.5 border-b border-slate-50 text-left"
-            >
-              <CategoryIcon name={cat.icon} color={cat.color} size={18} />
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="text-sm font-bold text-slate-800 flex-1">{cat.name}</span>
-                  <span className={`text-xs font-bold ${STATUS_TEXT_COLORS[catStatus]}`}>
-                    {formatCurrencyFull(catSpent, settings)}
-                    <span className="text-slate-400 font-normal"> / {formatCurrencyFull(catBudgeted, settings)}</span>
-                  </span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <ProgressBar percentage={catPct} status={catStatus} thin className="flex-1" />
-                  <span className={`text-[10px] font-bold ${STATUS_TEXT_COLORS[catStatus]}`}>{catPct}%</span>
-                </div>
-              </div>
-              {hasChildren && (
-                <span className="text-slate-300 flex-shrink-0">
-                  {isCollapsed ? <ChevronRight size={16} /> : <ChevronDown size={16} />}
-                </span>
-              )}
-            </button>
-
-            {!isCollapsed && (
-              <div className="divide-y divide-slate-50">
-                {/* Ítems directos a nivel categoría */}
-                {catDirectItems.map(item => (
-                  <div key={item.id} className="px-4">
-                    <ItemRow
-                      label={getFullPath(item.categoryRef, categories, subcategories, subSubcategories)}
-                      budgeted={item.amount}
-                      spent={byCat.get(cat.id) ?? 0}
-                      item={item}
-                      threshold={settings.warningThreshold}
-                      settings={settings}
-                      onDelete={setDeleting}
-                    />
+            <div className="w-full flex items-center gap-3 px-4 py-3.5 border-b border-slate-50">
+              <button
+                onClick={() => toggleCollapse(catKey)}
+                className="flex items-center gap-3 flex-1 min-w-0 text-left"
+              >
+                <CategoryIcon name={cat.icon} color={cat.color} size={18} />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-sm font-bold text-slate-800 flex-1">{cat.name}</span>
+                    <span className={`text-xs font-bold ${STATUS_TEXT_COLORS[catStatus]}`}>
+                      {formatCurrencyFull(catSpent, settings)}
+                      <span className="text-slate-400 font-normal"> / {formatCurrencyFull(catBudgeted, settings)}</span>
+                    </span>
                   </div>
-                ))}
+                  <div className="flex items-center gap-2">
+                    <ProgressBar percentage={catPct} status={catStatus} thin className="flex-1" />
+                    <span className={`text-[10px] font-bold ${STATUS_TEXT_COLORS[catStatus]}`}>{catPct}%</span>
+                  </div>
+                </div>
+              </button>
+              {catDirectItem && (
+                <button onClick={() => setDeleting(catDirectItem)} className="text-slate-200 flex-shrink-0" title="Eliminar presupuesto de la categoría">
+                  <Trash2 size={14} />
+                </button>
+              )}
+              {hasChildren && (
+                <button onClick={() => toggleCollapse(catKey)} className="text-slate-300 flex-shrink-0">
+                  {isCollapsed ? <ChevronRight size={16} /> : <ChevronDown size={16} />}
+                </button>
+              )}
+            </div>
 
+            {!isCollapsed && hasChildren && (
+              <div className="divide-y divide-slate-50">
                 {/* Subcategorías */}
                 {subTree.map(({ sub, subDirectItems, ssTree, subBudgeted, subSpent }) => {
                   const subStatus  = computeStatus(subSpent, subBudgeted, settings.warningThreshold)
                   const subPct     = pct(subSpent, subBudgeted)
                   const subKey     = `sub-${sub.id}`
                   const subCollapsed = collapsed.has(subKey)
-                  const subHasChildren = subDirectItems.length > 0 || ssTree.length > 0
+                  const subDirectItem = subDirectItems[0]
+                  const subHasChildren = ssTree.length > 0
 
                   return (
                     <div key={sub.id}>
                       {/* Fila subcategoría */}
-                      <button
-                        onClick={() => toggleCollapse(subKey)}
-                        className="w-full flex items-center gap-2 pl-10 pr-4 py-3 bg-slate-50/60 text-left"
-                      >
-                        <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: cat.color }} />
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className="text-xs font-semibold text-slate-700 flex-1">{sub.name}</span>
-                            <span className={`text-xs font-bold ${STATUS_TEXT_COLORS[subStatus]}`}>
-                              {formatCurrencyFull(subSpent, settings)}
-                              <span className="text-slate-400 font-normal"> / {formatCurrencyFull(subBudgeted, settings)}</span>
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <ProgressBar percentage={subPct} status={subStatus} thin className="flex-1" />
-                            <span className={`text-[10px] font-bold ${STATUS_TEXT_COLORS[subStatus]}`}>{subPct}%</span>
-                          </div>
-                        </div>
-                        {subHasChildren && (
-                          <span className="text-slate-300 flex-shrink-0">
-                            {subCollapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
-                          </span>
-                        )}
-                      </button>
-
-                      {!subCollapsed && (
-                        <>
-                          {/* Ítems directos de subcategoría */}
-                          {subDirectItems.map(item => (
-                            <div key={item.id} className="pl-12 pr-4 bg-slate-50/30">
-                              <ItemRow
-                                label={getFullPath(item.categoryRef, categories, subcategories, subSubcategories)}
-                                budgeted={item.amount}
-                                spent={bySub.get(sub.id) ?? 0}
-                                item={item}
-                                threshold={settings.warningThreshold}
-                                settings={settings}
-                                onDelete={setDeleting}
-                              />
+                      <div className="w-full flex items-center gap-2 pl-10 pr-4 py-3 bg-slate-50/60">
+                        <button
+                          onClick={() => toggleCollapse(subKey)}
+                          className="flex items-center gap-2 flex-1 min-w-0 text-left"
+                        >
+                          <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: cat.color }} />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="text-xs font-semibold text-slate-700 flex-1">{sub.name}</span>
+                              <span className={`text-xs font-bold ${STATUS_TEXT_COLORS[subStatus]}`}>
+                                {formatCurrencyFull(subSpent, settings)}
+                                <span className="text-slate-400 font-normal"> / {formatCurrencyFull(subBudgeted, settings)}</span>
+                              </span>
                             </div>
-                          ))}
+                            <div className="flex items-center gap-2">
+                              <ProgressBar percentage={subPct} status={subStatus} thin className="flex-1" />
+                              <span className={`text-[10px] font-bold ${STATUS_TEXT_COLORS[subStatus]}`}>{subPct}%</span>
+                            </div>
+                          </div>
+                        </button>
+                        {subDirectItem && (
+                          <button onClick={() => setDeleting(subDirectItem)} className="text-slate-200 flex-shrink-0" title="Eliminar presupuesto de la subcategoría">
+                            <Trash2 size={13} />
+                          </button>
+                        )}
+                        {subHasChildren && (
+                          <button onClick={() => toggleCollapse(subKey)} className="text-slate-300 flex-shrink-0">
+                            {subCollapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
+                          </button>
+                        )}
+                      </div>
 
+                      {!subCollapsed && subHasChildren && (
+                        <>
                           {/* Sub-subcategorías */}
                           {ssTree.map(({ ss, ssItems, ssBudgeted, ssSpent }) => (
                             <div key={ss.id}>
