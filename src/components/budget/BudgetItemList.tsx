@@ -72,10 +72,11 @@ export function BudgetItemList({ periodId }: Props) {
   const { budgetItems, deleteBudgetItem, categories, subcategories, subSubcategories, transactions, settings } = useDataStore()
   const navigate = useNavigate()
   const [deleting, setDeleting] = useState<BudgetItem | null>(null)
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
+  // Todo colapsado por defecto: el set guarda las claves EXPANDIDAS
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
 
-  const toggleCollapse = (key: string) =>
-    setCollapsed(prev => { const next = new Set(prev); next.has(key) ? next.delete(key) : next.add(key); return next })
+  const toggleExpand = (key: string) =>
+    setExpanded(prev => { const next = new Set(prev); next.has(key) ? next.delete(key) : next.add(key); return next })
 
   // Mapa de gastos por cada nivel del período actual
   const { byCat, bySub, bySubSub } = useMemo(() => {
@@ -202,7 +203,7 @@ export function BudgetItemList({ periodId }: Props) {
         const catStatus  = computeStatus(catSpent, catBudgeted, settings.warningThreshold)
         const catPct     = pct(catSpent, catBudgeted)
         const catKey     = `cat-${cat.id}`
-        const isCollapsed = collapsed.has(catKey)
+        const isExpanded = expanded.has(catKey)
         const catDirectItem = catDirectItems[0]
         const hasChildren = subTree.length > 0
 
@@ -211,7 +212,7 @@ export function BudgetItemList({ periodId }: Props) {
             {/* Cabecera de categoría */}
             <div className="w-full flex items-center gap-3 px-4 py-3.5 border-b border-slate-50">
               <button
-                onClick={() => toggleCollapse(catKey)}
+                onClick={() => toggleExpand(catKey)}
                 className="flex items-center gap-3 flex-1 min-w-0 text-left"
               >
                 <CategoryIcon name={cat.icon} color={cat.color} size={18} />
@@ -235,20 +236,20 @@ export function BudgetItemList({ periodId }: Props) {
                 </button>
               )}
               {hasChildren && (
-                <button onClick={() => toggleCollapse(catKey)} className="text-slate-300 flex-shrink-0">
-                  {isCollapsed ? <ChevronRight size={16} /> : <ChevronDown size={16} />}
+                <button onClick={() => toggleExpand(catKey)} className="text-slate-300 flex-shrink-0">
+                  {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
                 </button>
               )}
             </div>
 
-            {!isCollapsed && hasChildren && (
+            {isExpanded && hasChildren && (
               <div className="divide-y divide-slate-50">
                 {/* Subcategorías */}
                 {subTree.map(({ sub, subDirectItems, ssTree, subBudgeted, subSpent }) => {
                   const subStatus  = computeStatus(subSpent, subBudgeted, settings.warningThreshold)
                   const subPct     = pct(subSpent, subBudgeted)
                   const subKey     = `sub-${sub.id}`
-                  const subCollapsed = collapsed.has(subKey)
+                  const subExpanded = expanded.has(subKey)
                   const subDirectItem = subDirectItems[0]
                   const subHasChildren = ssTree.length > 0
 
@@ -281,13 +282,13 @@ export function BudgetItemList({ periodId }: Props) {
                           </button>
                         )}
                         {subHasChildren && (
-                          <button onClick={() => toggleCollapse(subKey)} className="text-slate-300 flex-shrink-0">
-                            {subCollapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
+                          <button onClick={() => toggleExpand(subKey)} className="text-slate-300 flex-shrink-0">
+                            {subExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                           </button>
                         )}
                       </div>
 
-                      {!subCollapsed && subHasChildren && (
+                      {subExpanded && subHasChildren && (
                         <>
                           {/* Sub-subcategorías */}
                           {ssTree.map(({ ss, ssItems, ssBudgeted, ssSpent }) => (
