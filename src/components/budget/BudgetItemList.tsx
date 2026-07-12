@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Trash2, PieChart, ChevronDown, ChevronRight } from 'lucide-react'
 import { useDataStore } from '../../store/dataStore'
 import type { BudgetItem, BudgetStatus, AppSettings } from '../../types'
@@ -33,10 +34,11 @@ interface ItemRowProps {
   threshold: number
   settings: AppSettings
   onDelete: (item: BudgetItem) => void
+  onNavigate?: () => void
   indent?: number
 }
 
-function ItemRow({ label, budgeted, spent, item, threshold, settings, onDelete, indent = 0 }: ItemRowProps) {
+function ItemRow({ label, budgeted, spent, item, threshold, settings, onDelete, onNavigate, indent = 0 }: ItemRowProps) {
   const status    = computeStatus(spent, budgeted, threshold)
   const remaining = budgeted - spent
   const percentage = pct(spent, budgeted)
@@ -44,7 +46,7 @@ function ItemRow({ label, budgeted, spent, item, threshold, settings, onDelete, 
   return (
     <div className="py-2.5" style={{ paddingLeft: `${indent}px` }}>
       <div className="flex items-center gap-2 mb-1.5">
-        <span className="flex-1 text-xs text-slate-600 truncate">{label}</span>
+        <button onClick={onNavigate} className="flex-1 text-left text-xs text-slate-600 truncate">{label}</button>
         <span className={`text-xs font-bold ${STATUS_TEXT_COLORS[status]} flex-shrink-0`}>
           {formatCurrencyFull(spent, settings)}
           <span className="text-slate-400 font-normal"> / {formatCurrencyFull(budgeted, settings)}</span>
@@ -68,6 +70,7 @@ function ItemRow({ label, budgeted, spent, item, threshold, settings, onDelete, 
 
 export function BudgetItemList({ periodId }: Props) {
   const { budgetItems, deleteBudgetItem, categories, subcategories, subSubcategories, transactions, settings } = useDataStore()
+  const navigate = useNavigate()
   const [deleting, setDeleting] = useState<BudgetItem | null>(null)
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
 
@@ -254,7 +257,7 @@ export function BudgetItemList({ periodId }: Props) {
                       {/* Fila subcategoría */}
                       <div className="w-full flex items-center gap-2 pl-10 pr-4 py-3 bg-slate-50/60">
                         <button
-                          onClick={() => toggleCollapse(subKey)}
+                          onClick={() => navigate(`/movimientos?cat=subcategory:${sub.id}`)}
                           className="flex items-center gap-2 flex-1 min-w-0 text-left"
                         >
                           <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: cat.color }} />
@@ -299,6 +302,7 @@ export function BudgetItemList({ periodId }: Props) {
                                     threshold={settings.warningThreshold}
                                     settings={settings}
                                     onDelete={setDeleting}
+                                    onNavigate={() => navigate(`/movimientos?cat=sub_subcategory:${ss.id}`)}
                                   />
                                 </div>
                               ))}
