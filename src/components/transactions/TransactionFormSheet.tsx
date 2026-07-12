@@ -30,6 +30,7 @@ export function TransactionFormSheet() {
   const [amountAltStr, setAmountAltStr] = useState('')
   const [categoryRef, setCategoryRef] = useState<CategoryRef | null>(null)
   const [description, setDescription] = useState('')
+  const [notes, setNotes]           = useState('')
   const [date, setDate]             = useState(todayISO())
   const [imageFile, setImageFile]   = useState<File | null>(null)
   const [imagePreview, setImagePreview] = useState<string | null>(null)
@@ -49,6 +50,7 @@ export function TransactionFormSheet() {
       setAmountAltStr(String(editing.amountAlt))
       setCategoryRef(editing.categoryRef ?? null)
       setDescription(editing.description)
+      setNotes(editing.notes ?? '')
       setDate(editing.date)
       setStep('details')
       setImageFile(null)
@@ -65,6 +67,7 @@ export function TransactionFormSheet() {
       setAmountAltStr('')
       setCategoryRef(null)
       setDescription('')
+      setNotes('')
       setDate(todayISO())
       setStep('type-account')
       setImageFile(null)
@@ -89,6 +92,7 @@ export function TransactionFormSheet() {
       amount,
       amountAlt,
       description: description.trim() || (txType === 'income' ? 'Ingreso' : 'Gasto'),
+      notes: notes.trim(),
       date,
     }
 
@@ -266,6 +270,9 @@ export function TransactionFormSheet() {
               <button onClick={() => txType === 'expense' ? setStep('category') : undefined} className="text-xs text-slate-400 truncate block text-left">
                 {fullPath || (isIncome ? 'Ingreso' : 'Sin categoría')}
               </button>
+              <button onClick={() => setStep('type-account')} className="text-xs text-brand-500 font-medium truncate block text-left mt-0.5">
+                {accounts.find(a => a.id === accountId)?.name ?? 'Sin cuenta'} ›
+              </button>
             </div>
           </div>
 
@@ -277,6 +284,17 @@ export function TransactionFormSheet() {
               onChange={e => setDescription(e.target.value)}
               placeholder={isIncome ? 'ej: Sueldo, Venta...' : 'ej: Supermercado, Nafta...'}
               className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-800 outline-none focus:border-brand-500"
+            />
+          </div>
+
+          <div>
+            <label className="text-xs font-medium text-slate-500 mb-1.5 block">Observaciones (opcional)</label>
+            <textarea
+              value={notes}
+              onChange={e => setNotes(e.target.value)}
+              placeholder="ej: detalle, comentario, a quién se le pagó..."
+              rows={2}
+              className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-800 outline-none focus:border-brand-500 resize-none"
             />
           </div>
 

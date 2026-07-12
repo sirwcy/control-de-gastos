@@ -501,7 +501,7 @@ export const useDataStore = create<DataState>()((set, get) => ({
         account_id: data.accountId || null,
         budget_period_id: data.budgetPeriodId,
         amount: data.amount, amount_alt: data.amountAlt,
-        date: data.date, description: data.description, notes: data.notes ?? null,
+        date: data.date, description: data.description, notes: data.notes || null,
         image_path: data.imageId ?? null,
         created_by: session?.user?.id ?? null,
         ...categoryRefToDb(data.categoryRef),
@@ -522,7 +522,7 @@ export const useDataStore = create<DataState>()((set, get) => ({
     if (data.amountAlt !== undefined)      dbData.amount_alt = data.amountAlt
     if (data.date !== undefined)           dbData.date = data.date
     if (data.description !== undefined)    dbData.description = data.description
-    if (data.notes !== undefined)          dbData.notes = data.notes
+    if (data.notes !== undefined)          dbData.notes = data.notes || null
     if (data.imageId !== undefined)        dbData.image_path = data.imageId ?? null
     if (data.categoryRef !== undefined)    Object.assign(dbData, categoryRefToDb(data.categoryRef))
     const { error } = await supabase.from('cdg_transactions').update(dbData).eq('id', id)
