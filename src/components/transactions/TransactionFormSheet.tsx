@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { TrendingUp, TrendingDown, Camera, X } from 'lucide-react'
+import { TrendingUp, TrendingDown, Camera, X, ChevronRight } from 'lucide-react'
 import { saveImage, getImageUrl, deleteImage } from '../../lib/imageStore'
 import { BottomSheet } from '../ui/BottomSheet'
 import { CategoryPicker } from '../categories/CategoryPicker'
@@ -257,24 +257,56 @@ export function TransactionFormSheet() {
       {/* ─── Paso 4: Detalles ──────────────────────────────────────────────────── */}
       {step === 'details' && (
         <form className="p-5 space-y-4" onSubmit={e => { e.preventDefault(); if (canSave) handleSave() }}>
-          {/* Resumen editable */}
-          <div className="flex items-center gap-3 p-4 bg-slate-50 rounded-2xl">
+          {/* Monto (tocar para editar) */}
+          <button
+            type="button"
+            onClick={() => setStep('amount')}
+            className="w-full flex items-center gap-3 p-4 bg-slate-50 rounded-2xl text-left"
+          >
             <div className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 ${isIncome ? 'bg-emerald-100' : 'bg-red-100'}`}>
               {isIncome
                 ? <TrendingUp size={16} className="text-emerald-600" />
                 : <TrendingDown size={16} className="text-red-500" />}
             </div>
             <div className="flex-1 min-w-0">
-              <button type="button" onClick={() => setStep('amount')} className="text-sm font-bold text-slate-800 text-left">
+              <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">Monto</p>
+              <p className="text-lg font-bold text-slate-800">
                 {amountStr ? `${isIncome ? '+' : '-'}$${amountStr}` : 'Sin monto'}
-              </button>
-              <button type="button" onClick={() => txType === 'expense' ? setStep('category') : undefined} className="text-xs text-slate-400 truncate block text-left">
-                {fullPath || (isIncome ? 'Ingreso' : 'Sin categoría')}
-              </button>
-              <button type="button" onClick={() => setStep('type-account')} className="text-xs text-brand-500 font-medium truncate block text-left mt-0.5">
-                {accounts.find(a => a.id === accountId)?.name ?? 'Sin cuenta'} ›
+              </p>
+            </div>
+            <ChevronRight size={16} className="text-slate-300 flex-shrink-0" />
+          </button>
+
+          {/* Categoría (solo gastos) — campo propio */}
+          {!isIncome && (
+            <div>
+              <label className="text-xs font-medium text-slate-500 mb-1.5 block">Categoría</label>
+              <button
+                type="button"
+                onClick={() => setStep('category')}
+                className="w-full flex items-center justify-between gap-2 border border-slate-200 rounded-xl px-4 py-3 text-sm text-left"
+              >
+                <span className={`truncate ${categoryRef ? 'text-slate-800' : 'text-slate-400'}`}>
+                  {fullPath || 'Elegir categoría'}
+                </span>
+                <ChevronRight size={16} className="text-slate-300 flex-shrink-0" />
               </button>
             </div>
+          )}
+
+          {/* Cuenta — campo propio */}
+          <div>
+            <label className="text-xs font-medium text-slate-500 mb-1.5 block">Cuenta</label>
+            <button
+              type="button"
+              onClick={() => setStep('type-account')}
+              className="w-full flex items-center justify-between gap-2 border border-slate-200 rounded-xl px-4 py-3 text-sm text-left"
+            >
+              <span className={`truncate ${accountId ? 'text-slate-800' : 'text-slate-400'}`}>
+                {accounts.find(a => a.id === accountId)?.name ?? 'Elegir cuenta'}
+              </span>
+              <ChevronRight size={16} className="text-slate-300 flex-shrink-0" />
+            </button>
           </div>
 
           <div>
