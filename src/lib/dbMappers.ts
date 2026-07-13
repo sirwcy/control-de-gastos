@@ -77,6 +77,7 @@ export const budgetItemFromDb = (r: any): BudgetItem => ({
 export const transactionFromDb = (r: any): Transaction => ({
   id: r.id, type: r.type,
   accountId: r.account_id ?? '',
+  transferAccountId: r.transfer_account_id ?? undefined,
   budgetPeriodId: r.budget_period_id,
   categoryRef: categoryRefFromDb(r),
   amount: Number(r.amount), amountAlt: Number(r.amount_alt),

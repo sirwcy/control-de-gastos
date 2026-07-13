@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { TrendingUp, TrendingDown, Camera, X, ChevronRight } from 'lucide-react'
+import { TrendingUp, TrendingDown, ArrowLeftRight, Camera, X, ChevronRight } from 'lucide-react'
 import { saveImage, getImageUrl, deleteImage } from '../../lib/imageStore'
 import { BottomSheet } from '../ui/BottomSheet'
 import { CategoryPicker } from '../categories/CategoryPicker'
@@ -7,11 +7,42 @@ import { DualAmountInput } from './DualAmountInput'
 import { useDataStore } from '../../store/dataStore'
 import { useUIStore } from '../../store/uiStore'
 import { useAuthStore } from '../../store/authStore'
-import type { CategoryRef, TransactionType } from '../../types'
+import type { CategoryRef, TransactionType, Account } from '../../types'
 import { getFullPath } from '../../lib/categoryHelpers'
 import { todayISO, parseAmount } from '../../lib/formatters'
 
 type Step = 'type-account' | 'amount' | 'category' | 'details'
+
+// Lista de cuentas seleccionable (reutilizada para origen y destino)
+function AccountList({ accounts, selectedId, onSelect, excludeId }: {
+  accounts: Account[]
+  selectedId: string
+  onSelect: (id: string) => void
+  excludeId?: string
+}) {
+  const list = accounts.filter(a => a.id !== excludeId)
+  if (list.length === 0) {
+    return <p className="text-sm text-slate-400 text-center py-4">No hay cuentas disponibles.</p>
+  }
+  return (
+    <div className="space-y-2">
+      {list.map(acc => (
+        <button
+          key={acc.id}
+          type="button"
+          onClick={() => onSelect(acc.id)}
+          className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-colors text-left ${
+            selectedId === acc.id ? 'bg-brand-50 ring-2 ring-brand-500' : 'bg-slate-50'
+          }`}
+        >
+          <div className="w-8 h-8 rounded-full flex-shrink-0" style={{ backgroundColor: acc.color }} />
+          <span className="text-sm font-medium text-slate-800 flex-1">{acc.name}</span>
+          {selectedId === acc.id && <div className="w-2 h-2 rounded-full bg-brand-500" />}
+        </button>
+      ))}
+    </div>
+  )
+}
 
 export function TransactionFormSheet() {
   const {
@@ -26,6 +57,7 @@ export function TransactionFormSheet() {
   const [step, setStep]             = useState<Step>('type-account')
   const [txType, setTxType]         = useState<TransactionType>(defaultTransactionType)
   const [accountId, setAccountId]   = useState('')
+  const [transferAccountId, setTransferAccountId] = useState('')
   const [amountStr, setAmountStr]   = useState('')
   const [amountAltStr, setAmountAltStr] = useState('')
   const [categoryRef, setCategoryRef] = useState<CategoryRef | null>(null)
@@ -46,6 +78,7 @@ export function TransactionFormSheet() {
     if (editing) {
       setTxType(editing.type)
       setAccountId(editing.accountId)
+      setTransferAccountId(editing.transferAccountId ?? '')
       setAmountStr(String(editing.amount))
       setAmountAltStr(String(editing.amountAlt))
       setCategoryRef(editing.categoryRef ?? null)
@@ -63,6 +96,7 @@ export function TransactionFormSheet() {
     } else {
       setTxType(defaultTransactionType)
       setAccountId(accounts[0]?.id ?? '')
+      setTransferAccountId('')
       setAmountStr('')
       setAmountAltStr('')
       setCategoryRef(null)
@@ -76,6 +110,11 @@ export function TransactionFormSheet() {
     }
   }, [transactionSheetOpen, editing])
 
+  const isIncome   = txType === 'income'
+  const isExpense  = txType === 'expense'
+  const isTransfer = txType === 'transfer'
+  const isSalida   = isExpense || isTransfer
+
   const handleSave = async () => {
     const amount = parseAmount(amountStr)
     const amountAlt = parseAmount(amountAltStr) || 0
@@ -87,11 +126,12 @@ export function TransactionFormSheet() {
     const baseData = {
       type: txType,
       accountId,
+      transferAccountId: isTransfer ? transferAccountId : undefined,
       budgetPeriodId: activePeriod.id,
-      categoryRef: categoryRef ?? undefined,
+      categoryRef: isExpense ? (categoryRef ?? undefined) : undefined,
       amount,
       amountAlt,
-      description: description.trim() || (txType === 'income' ? 'Ingreso' : 'Gasto'),
+      description: description.trim() || (isIncome ? 'Ingreso' : isTransfer ? 'Transferencia' : 'Gasto'),
       notes: notes.trim(),
       date,
     }
@@ -99,7 +139,6 @@ export function TransactionFormSheet() {
     if (editing) {
       let imagePath: string | undefined = editing.imageId
       if (imageFile) {
-        // Sube al path canónico del TX (upsert sobreescribe si ya existía)
         imagePath = `${currentWalletId}/${editing.id}`
         await saveImage(imagePath, imageFile)
       } else if (removedExistingImage && imagePath) {
@@ -108,7 +147,6 @@ export function TransactionFormSheet() {
       }
       await updateTransaction(editing.id, { ...baseData, imageId: imagePath })
     } else {
-      // Crear TX primero para obtener el ID, luego subir imagen
       const tx = await addTransaction(baseData)
       if (imageFile) {
         const imagePath = `${currentWalletId}/${tx.id}`
@@ -123,11 +161,18 @@ export function TransactionFormSheet() {
     ? getFullPath(categoryRef, categories, subcategories, subSubcategories)
     : ''
 
-  const canProceedFromAmount = !!amountStr && parseAmount(amountStr) > 0
-  // Un gasto no se puede guardar sin categoría/subcategoría (el picker obliga a la subcategoría)
-  const canSave = canProceedFromAmount && (txType === 'income' || !!categoryRef)
+  const accountName = (id: string) => accounts.find(a => a.id === id)?.name
 
-  const isIncome = txType === 'income'
+  const canProceedFromTypeAccount = isTransfer
+    ? (!!accountId && !!transferAccountId && accountId !== transferAccountId)
+    : !!accountId
+  const canProceedFromAmount = !!amountStr && parseAmount(amountStr) > 0
+  const canSave = canProceedFromAmount && (
+    isExpense  ? !!categoryRef :
+    isTransfer ? (!!transferAccountId && accountId !== transferAccountId) :
+    true
+  )
+
   const titles: Record<Step, string> = {
     'type-account': editing ? 'Editar movimiento' : 'Nuevo movimiento',
     amount:   'Monto',
@@ -135,32 +180,36 @@ export function TransactionFormSheet() {
     details:  editing ? 'Editar movimiento' : 'Detalles',
   }
 
+  // Color/ícono según tipo
+  const typeIcon = isIncome
+    ? <TrendingUp size={16} className="text-emerald-600" />
+    : isTransfer
+      ? <ArrowLeftRight size={16} className="text-indigo-500" />
+      : <TrendingDown size={16} className="text-red-500" />
+  const typeIconBg = isIncome ? 'bg-emerald-100' : isTransfer ? 'bg-indigo-100' : 'bg-red-100'
+
   return (
     <BottomSheet open={transactionSheetOpen} onClose={closeTransactionSheet} title={titles[step]} fullHeight>
 
-      {/* ─── Paso 1: Tipo + Cuenta ─────────────────────────────────────────────── */}
+      {/* ─── Paso 1: Tipo + Cuenta(s) ──────────────────────────────────────────── */}
       {step === 'type-account' && (
         <div className="p-5 space-y-5">
-          {/* Tipo de movimiento */}
+          {/* Salida / Ingreso */}
           <div>
             <label className="text-xs font-medium text-slate-500 mb-2 block">Tipo de movimiento</label>
             <div className="grid grid-cols-2 gap-3">
               <button
-                onClick={() => setTxType('expense')}
+                onClick={() => { if (!isSalida) setTxType('expense') }}
                 className={`flex items-center justify-center gap-2 py-3.5 rounded-2xl font-semibold text-sm transition-colors ${
-                  txType === 'expense'
-                    ? 'bg-red-500 text-white shadow-sm shadow-red-200'
-                    : 'bg-slate-100 text-slate-500'
+                  isSalida ? 'bg-red-500 text-white shadow-sm shadow-red-200' : 'bg-slate-100 text-slate-500'
                 }`}
               >
-                <TrendingDown size={18} /> Gasto
+                <TrendingDown size={18} /> Salida
               </button>
               <button
                 onClick={() => setTxType('income')}
                 className={`flex items-center justify-center gap-2 py-3.5 rounded-2xl font-semibold text-sm transition-colors ${
-                  txType === 'income'
-                    ? 'bg-emerald-500 text-white shadow-sm shadow-emerald-200'
-                    : 'bg-slate-100 text-slate-500'
+                  isIncome ? 'bg-emerald-500 text-white shadow-sm shadow-emerald-200' : 'bg-slate-100 text-slate-500'
                 }`}
               >
                 <TrendingUp size={18} /> Ingreso
@@ -168,39 +217,56 @@ export function TransactionFormSheet() {
             </div>
           </div>
 
-          {/* Cuenta */}
-          <div>
-            <label className="text-xs font-medium text-slate-500 mb-2 block">Cuenta</label>
-            {accounts.length === 0 ? (
-              <p className="text-sm text-slate-400 text-center py-4">
-                No hay cuentas. Creá una desde la sección Cuentas.
-              </p>
-            ) : (
-              <div className="space-y-2">
-                {accounts.map(acc => (
-                  <button
-                    key={acc.id}
-                    onClick={() => setAccountId(acc.id)}
-                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-colors text-left ${
-                      accountId === acc.id
-                        ? 'bg-brand-50 ring-2 ring-brand-500'
-                        : 'bg-slate-50'
-                    }`}
-                  >
-                    <div className="w-8 h-8 rounded-full flex-shrink-0" style={{ backgroundColor: acc.color }} />
-                    <span className="text-sm font-medium text-slate-800 flex-1">{acc.name}</span>
-                    {accountId === acc.id && (
-                      <div className="w-2 h-2 rounded-full bg-brand-500" />
-                    )}
-                  </button>
-                ))}
+          {/* Sub-tipo de salida: Gasto / Transferencia */}
+          {isSalida && (
+            <div>
+              <label className="text-xs font-medium text-slate-500 mb-2 block">Tipo de salida</label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => setTxType('expense')}
+                  className={`py-2.5 rounded-xl text-xs font-semibold border-2 transition-colors ${
+                    isExpense ? 'border-red-400 bg-red-50 text-red-600' : 'border-slate-100 bg-slate-50 text-slate-500'
+                  }`}
+                >
+                  Gasto
+                </button>
+                <button
+                  onClick={() => setTxType('transfer')}
+                  className={`flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-semibold border-2 transition-colors ${
+                    isTransfer ? 'border-indigo-400 bg-indigo-50 text-indigo-600' : 'border-slate-100 bg-slate-50 text-slate-500'
+                  }`}
+                >
+                  <ArrowLeftRight size={13} /> Transferencia
+                </button>
               </div>
-            )}
-          </div>
+            </div>
+          )}
+
+          {accounts.length === 0 ? (
+            <p className="text-sm text-slate-400 text-center py-4">
+              No hay cuentas. Creá una desde la sección Cuentas.
+            </p>
+          ) : isTransfer ? (
+            <>
+              <div>
+                <label className="text-xs font-medium text-slate-500 mb-2 block">Desde (cuenta origen)</label>
+                <AccountList accounts={accounts} selectedId={accountId} onSelect={setAccountId} excludeId={transferAccountId} />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-slate-500 mb-2 block">Hacia (cuenta destino)</label>
+                <AccountList accounts={accounts} selectedId={transferAccountId} onSelect={setTransferAccountId} excludeId={accountId} />
+              </div>
+            </>
+          ) : (
+            <div>
+              <label className="text-xs font-medium text-slate-500 mb-2 block">Cuenta</label>
+              <AccountList accounts={accounts} selectedId={accountId} onSelect={setAccountId} />
+            </div>
+          )}
 
           <button
             onClick={() => setStep('amount')}
-            disabled={!accountId}
+            disabled={!canProceedFromTypeAccount}
             className="w-full py-4 bg-brand-500 text-white font-bold text-base rounded-2xl disabled:opacity-30"
           >
             Continuar
@@ -212,7 +278,7 @@ export function TransactionFormSheet() {
       {step === 'amount' && (
         <form
           className="p-5 space-y-5"
-          onSubmit={e => { e.preventDefault(); if (canProceedFromAmount) (isIncome ? setStep('details') : setStep('category')) }}
+          onSubmit={e => { e.preventDefault(); if (canProceedFromAmount) (isExpense ? setStep('category') : setStep('details')) }}
         >
           <DualAmountInput
             currency={getCurrency(accounts.find(a => a.id === accountId)?.currencyId)}
@@ -263,22 +329,20 @@ export function TransactionFormSheet() {
             onClick={() => setStep('amount')}
             className="w-full flex items-center gap-3 p-4 bg-slate-50 rounded-2xl text-left"
           >
-            <div className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 ${isIncome ? 'bg-emerald-100' : 'bg-red-100'}`}>
-              {isIncome
-                ? <TrendingUp size={16} className="text-emerald-600" />
-                : <TrendingDown size={16} className="text-red-500" />}
+            <div className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 ${typeIconBg}`}>
+              {typeIcon}
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">Monto</p>
               <p className="text-lg font-bold text-slate-800">
-                {amountStr ? `${isIncome ? '+' : '-'}$${amountStr}` : 'Sin monto'}
+                {amountStr ? `${isIncome ? '+' : isTransfer ? '' : '-'}$${amountStr}` : 'Sin monto'}
               </p>
             </div>
             <ChevronRight size={16} className="text-slate-300 flex-shrink-0" />
           </button>
 
-          {/* Categoría (solo gastos) — campo propio */}
-          {!isIncome && (
+          {/* Categoría (solo gastos) */}
+          {isExpense && (
             <div>
               <label className="text-xs font-medium text-slate-500 mb-1.5 block">Categoría</label>
               <button
@@ -294,16 +358,20 @@ export function TransactionFormSheet() {
             </div>
           )}
 
-          {/* Cuenta — campo propio */}
+          {/* Cuenta(s) */}
           <div>
-            <label className="text-xs font-medium text-slate-500 mb-1.5 block">Cuenta</label>
+            <label className="text-xs font-medium text-slate-500 mb-1.5 block">
+              {isTransfer ? 'Cuentas (origen → destino)' : 'Cuenta'}
+            </label>
             <button
               type="button"
               onClick={() => setStep('type-account')}
               className="w-full flex items-center justify-between gap-2 border border-slate-200 rounded-xl px-4 py-3 text-sm text-left"
             >
-              <span className={`truncate ${accountId ? 'text-slate-800' : 'text-slate-400'}`}>
-                {accounts.find(a => a.id === accountId)?.name ?? 'Elegir cuenta'}
+              <span className="truncate text-slate-800">
+                {isTransfer
+                  ? `${accountName(accountId) ?? '—'} → ${accountName(transferAccountId) ?? '—'}`
+                  : (accountName(accountId) ?? 'Elegir cuenta')}
               </span>
               <ChevronRight size={16} className="text-slate-300 flex-shrink-0" />
             </button>
@@ -315,7 +383,7 @@ export function TransactionFormSheet() {
               autoFocus
               value={description}
               onChange={e => setDescription(e.target.value)}
-              placeholder={isIncome ? 'ej: Sueldo, Venta...' : 'ej: Supermercado, Nafta...'}
+              placeholder={isIncome ? 'ej: Sueldo, Venta...' : isTransfer ? 'ej: Pase a ahorros...' : 'ej: Supermercado, Nafta...'}
               className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-800 outline-none focus:border-brand-500"
             />
           </div>
@@ -389,9 +457,13 @@ export function TransactionFormSheet() {
           <button
             type="submit"
             disabled={!canSave}
-            className={`w-full py-4 font-bold text-base text-white rounded-2xl disabled:opacity-30 ${isIncome ? 'bg-emerald-500' : 'bg-brand-500'}`}
+            className={`w-full py-4 font-bold text-base text-white rounded-2xl disabled:opacity-30 ${
+              isIncome ? 'bg-emerald-500' : isTransfer ? 'bg-indigo-500' : 'bg-brand-500'
+            }`}
           >
-            {editing ? 'Guardar cambios' : (isIncome ? 'Registrar ingreso' : 'Registrar gasto')}
+            {editing
+              ? 'Guardar cambios'
+              : isIncome ? 'Registrar ingreso' : isTransfer ? 'Registrar transferencia' : 'Registrar gasto'}
           </button>
         </form>
       )}

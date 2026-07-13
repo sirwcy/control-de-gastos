@@ -8,9 +8,10 @@ import { useDataStore } from '../store/dataStore'
 import { useCurrentPeriod } from '../hooks/usePeriodId'
 import { getRefLabel } from '../lib/categoryHelpers'
 import { ArrowLeftRight, X } from 'lucide-react'
-import type { TransactionType, CategoryLevel } from '../types'
+import type { CategoryLevel } from '../types'
 
-type Filter = 'all' | TransactionType
+// 'salida' agrupa gastos y transferencias
+type Filter = 'all' | 'salida' | 'income'
 
 export function TransactionsPage() {
   const { transactions, accounts, categories, subcategories, subSubcategories } = useDataStore()
@@ -63,8 +64,9 @@ export function TransactionsPage() {
     return transactions
       .filter(t => {
         if (t.budgetPeriodId !== periodId) return false
-        if (filter !== 'all' && t.type !== filter) return false
-        if (accountFilter !== 'all' && t.accountId !== accountFilter) return false
+        if (filter === 'income' && t.type !== 'income') return false
+        if (filter === 'salida' && t.type === 'income') return false
+        if (accountFilter !== 'all' && t.accountId !== accountFilter && t.transferAccountId !== accountFilter) return false
         if (catFilter) {
           const ref = t.categoryRef
           if (!ref) return false
@@ -96,17 +98,17 @@ export function TransactionsPage() {
 
       {/* Filtros de tipo */}
       <div className="px-4 pt-3 flex gap-2">
-        {(['all', 'expense', 'income'] as Filter[]).map(f => (
+        {(['all', 'salida', 'income'] as Filter[]).map(f => (
           <button
             key={f}
             onClick={() => setFilter(f)}
             className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-colors ${
               filter === f
-                ? f === 'income' ? 'bg-emerald-500 text-white' : f === 'expense' ? 'bg-red-500 text-white' : 'bg-brand-500 text-white'
+                ? f === 'income' ? 'bg-emerald-500 text-white' : f === 'salida' ? 'bg-red-500 text-white' : 'bg-brand-500 text-white'
                 : 'bg-slate-100 text-slate-500'
             }`}
           >
-            {f === 'all' ? 'Todos' : f === 'expense' ? 'Gastos' : 'Ingresos'}
+            {f === 'all' ? 'Todos' : f === 'salida' ? 'Salidas' : 'Ingresos'}
           </button>
         ))}
       </div>
@@ -157,7 +159,7 @@ export function TransactionsPage() {
         <EmptyState
           icon={ArrowLeftRight}
           title="Sin movimientos"
-          description="Usá el botón + para registrar un gasto o ingreso."
+          description="Usá el botón + para registrar una salida o un ingreso."
         />
       ) : (
         <div className="px-4 py-4 space-y-2">

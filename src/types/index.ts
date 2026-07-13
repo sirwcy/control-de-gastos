@@ -96,15 +96,17 @@ export interface BudgetItem {
   notes?: string
 }
 
-// ─── Transacciones (gastos e ingresos) ───────────────────────────────────────
-export type TransactionType = 'expense' | 'income'
+// ─── Transacciones ───────────────────────────────────────────────────────────
+// Una "salida" es un 'expense' (gasto) o un 'transfer' (transferencia entre cuentas).
+export type TransactionType = 'expense' | 'income' | 'transfer'
 
 export interface Transaction {
   id: ID
   type: TransactionType
-  accountId: ID
+  accountId: ID              // cuenta origen (para transfer, de dónde sale)
+  transferAccountId?: ID     // solo transfer: cuenta destino (a dónde entra)
   budgetPeriodId: ID
-  categoryRef?: CategoryRef  // opcional para ingresos
+  categoryRef?: CategoryRef  // opcional para ingresos; no aplica a transferencias
   amount: number             // moneda oficial
   amountAlt: number          // moneda alterna al momento del registro
   date: string               // YYYY-MM-DD

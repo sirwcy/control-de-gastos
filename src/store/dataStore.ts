@@ -356,9 +356,21 @@ export const useDataStore = create<DataState>()((set, get) => ({
   getAccountBalance: (accountId) => {
     const account = get().accounts.find(a => a.id === accountId)
     if (!account) return undefined
-    const txs = get().transactions.filter(t => t.accountId === accountId)
-    const balance    = account.initialBalance    + txs.reduce((sum, t) => t.type === 'income' ? sum + t.amount    : sum - t.amount,    0)
-    const balanceAlt = account.initialBalanceAlt + txs.reduce((sum, t) => t.type === 'income' ? sum + t.amountAlt : sum - t.amountAlt, 0)
+    let balance    = account.initialBalance
+    let balanceAlt = account.initialBalanceAlt
+    for (const t of get().transactions) {
+      if (t.accountId === accountId) {
+        // Origen: ingreso suma; gasto y transferencia (salida) restan
+        const sign = t.type === 'income' ? 1 : -1
+        balance    += sign * t.amount
+        balanceAlt += sign * t.amountAlt
+      }
+      if (t.type === 'transfer' && t.transferAccountId === accountId) {
+        // Destino de una transferencia: entra dinero
+        balance    += t.amount
+        balanceAlt += t.amountAlt
+      }
+    }
     return { account, balance, balanceAlt }
   },
 
@@ -499,6 +511,7 @@ export const useDataStore = create<DataState>()((set, get) => ({
       .insert({
         id, wallet_id: wid(), type: data.type,
         account_id: data.accountId || null,
+        transfer_account_id: data.transferAccountId ?? null,
         budget_period_id: data.budgetPeriodId,
         amount: data.amount, amount_alt: data.amountAlt,
         date: data.date, description: data.description, notes: data.notes || null,
@@ -517,6 +530,7 @@ export const useDataStore = create<DataState>()((set, get) => ({
     const dbData: Record<string, unknown> = { updated_at: new Date().toISOString() }
     if (data.type !== undefined)           dbData.type = data.type
     if (data.accountId !== undefined)      dbData.account_id = data.accountId || null
+    if (data.transferAccountId !== undefined) dbData.transfer_account_id = data.transferAccountId ?? null
     if (data.budgetPeriodId !== undefined) dbData.budget_period_id = data.budgetPeriodId
     if (data.amount !== undefined)         dbData.amount = data.amount
     if (data.amountAlt !== undefined)      dbData.amount_alt = data.amountAlt

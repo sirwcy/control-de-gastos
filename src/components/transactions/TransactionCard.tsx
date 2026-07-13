@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Trash2, Pencil, TrendingUp, TrendingDown, Camera, X, User } from 'lucide-react'
+import { Trash2, Pencil, TrendingUp, TrendingDown, ArrowLeftRight, Camera, X, User } from 'lucide-react'
 import type { Transaction } from '../../types'
 import { getImageUrl } from '../../lib/imageStore'
 import { useDataStore } from '../../store/dataStore'
@@ -29,11 +29,13 @@ export function TransactionCard({ transaction }: Props) {
   }, [viewingImage, transaction.imageId])
 
   const isIncome = transaction.type === 'income'
+  const isTransfer = transaction.type === 'transfer'
   const cat = transaction.categoryRef ? getCategoryForRef(transaction.categoryRef, categories) : undefined
   const fullPath = transaction.categoryRef
     ? getFullPath(transaction.categoryRef, categories, subcategories, subSubcategories)
     : undefined
   const account = accounts.find(a => a.id === transaction.accountId)
+  const transferAccount = accounts.find(a => a.id === transaction.transferAccountId)
   const currency = getCurrency(account?.currencyId)
 
   // Autor del movimiento
@@ -53,10 +55,12 @@ export function TransactionCard({ transaction }: Props) {
           {cat ? (
             <CategoryIcon name={cat.icon} color={cat.color} size={18} />
           ) : (
-            <div className={`w-9 h-9 rounded-full flex items-center justify-center ${isIncome ? 'bg-emerald-100' : 'bg-red-100'}`}>
+            <div className={`w-9 h-9 rounded-full flex items-center justify-center ${isIncome ? 'bg-emerald-100' : isTransfer ? 'bg-indigo-100' : 'bg-red-100'}`}>
               {isIncome
                 ? <TrendingUp size={16} className="text-emerald-600" />
-                : <TrendingDown size={16} className="text-red-500" />}
+                : isTransfer
+                  ? <ArrowLeftRight size={16} className="text-indigo-500" />
+                  : <TrendingDown size={16} className="text-red-500" />}
             </div>
           )}
         </div>
@@ -64,21 +68,25 @@ export function TransactionCard({ transaction }: Props) {
         {/* Descripción y ruta */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5 mb-0.5">
-            <span className={`text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded-full ${isIncome ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-600'}`}>
-              {isIncome ? 'Ingreso' : 'Gasto'}
+            <span className={`text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded-full ${isIncome ? 'bg-emerald-100 text-emerald-700' : isTransfer ? 'bg-indigo-100 text-indigo-600' : 'bg-red-100 text-red-600'}`}>
+              {isIncome ? 'Ingreso' : isTransfer ? 'Transferencia' : 'Gasto'}
             </span>
           </div>
           <p className="text-sm font-semibold text-slate-800 truncate">{transaction.description}</p>
           <p className="text-xs text-slate-400 truncate">
-            {fullPath ?? (isIncome ? 'Sin categoría' : 'Sin categoría')}
-            {account && <span className="text-slate-300"> · {account.name}</span>}
+            {isTransfer
+              ? <span>{account?.name ?? '—'} <span className="text-indigo-400">→</span> {transferAccount?.name ?? '—'}</span>
+              : <>
+                  {fullPath ?? 'Sin categoría'}
+                  {account && <span className="text-slate-300"> · {account.name}</span>}
+                </>}
           </p>
         </div>
 
         {/* Montos y fecha */}
         <div className="text-right flex-shrink-0">
-          <p className={`text-sm font-bold ${isIncome ? 'text-emerald-600' : 'text-slate-800'}`}>
-            {isIncome ? '+' : '-'}{formatCurrencyFull(transaction.amount, settings)}
+          <p className={`text-sm font-bold ${isIncome ? 'text-emerald-600' : isTransfer ? 'text-indigo-500' : 'text-slate-800'}`}>
+            {isIncome ? '+' : isTransfer ? '' : '-'}{formatCurrencyFull(transaction.amount, settings)}
           </p>
           {currency && (
             <p className="text-xs text-amber-500">
@@ -138,7 +146,7 @@ export function TransactionCard({ transaction }: Props) {
 
       <ConfirmDialog
         open={confirmDelete}
-        title={`¿Eliminar ${isIncome ? 'ingreso' : 'gasto'}?`}
+        title={`¿Eliminar ${isIncome ? 'ingreso' : isTransfer ? 'transferencia' : 'gasto'}?`}
         message={`Se eliminará "${transaction.description}" por ${formatCurrencyFull(transaction.amount, settings)}.`}
         onConfirm={() => { deleteTransaction(transaction.id); setConfirmDelete(false) }}
         onCancel={() => setConfirmDelete(false)}
